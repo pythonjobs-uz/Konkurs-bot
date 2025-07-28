@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+import logging
 
-from app.core.database import get_db
+from app.core.database import get_db, User, Contest, Participant
 from app.services.user_service import UserService
 from app.services.contest_service import ContestService
 from app.services.analytics_service import AnalyticsService
@@ -12,6 +15,12 @@ from app.core.config import settings
 admin_router = APIRouter()
 webhook_router = APIRouter()
 analytics_router = APIRouter()
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+@router.get("/health")
+async def health_check():
+    return {"status": "healthy", "version": "2.0.0"}
 
 @admin_router.get("/stats")
 async def get_admin_stats(db: AsyncSession = Depends(get_db)):
@@ -211,6 +220,47 @@ async def get_user_analytics(
         }
     }
 
+@router.get("/stats")
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    try:
+        async with db as session:
+            users_count = await session.scalar(select(func.count(User.id)))
+            contests_count = await session.scalar(select(func.count(Contest.id)))
+            participants_count = await session.scalar(select(func.count(Participant.id)))
+            
+            return {
+                "users": users_count or 0,
+                "contests": contests_count or 0,
+                "participants": participants_count or 0
+            }
+    except Exception as e:
+        logger.error(f"Stats error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @webhook_router.post("/telegram")
 async def telegram_webhook():
     return {"status": "ok"}
+
+@router.post("/webhook")
+async def webhook_handler(request: Request):
+    if not settings.USE_WEBHOOK:
+        raise HTTPException(status_code=404, detail="Webhook not enabled")
+    
+    try:
+        secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if secret_token != settings.WEBHOOK_SECRET:
+            raise HTTPException(status_code=403, detail="Invalid secret token")
+        
+        update_data = await request.json()
+        
+        if hasattr(request.app.state, 'dp') and hasattr(request.app.state, 'bot'):
+            await request.app.state.dp.feed_update(
+                request.app.state.bot, 
+                update_data
+            )
+        
+        return JSONResponse({"ok": True})
+    
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        raise HTTPException(status_code=500, detail="Webhook processing failed")

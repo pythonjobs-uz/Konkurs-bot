@@ -1,16 +1,18 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, User
+from aiogram.types import TelegramObject, Message, CallbackQuery
 import time
+import logging
 
-from app.core.redis import cache
+from app.core.redis import redis_manager
 from app.core.config import settings
-from app.locales.translations import get_text
+
+logger = logging.getLogger(__name__)
 
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(self):
         self.rate_limit = settings.RATE_LIMIT_MESSAGES
-        self.window = settings.RATE_LIMIT_WINDOW
+        self.time_window = settings.RATE_LIMIT_WINDOW
     
     async def __call__(
         self,
@@ -18,22 +20,34 @@ class ThrottlingMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        user: User = data.get("event_from_user")
-        
-        if user and user.id not in settings.ADMIN_IDS:
-            key = f"throttle:{user.id}"
-            current_time = int(time.time())
+        if isinstance(event, (Message, CallbackQuery)):
+            user_id = event.from_user.id if event.from_user else None
             
-            requests = await cache.get(key) or []
-            requests = [req for req in requests if current_time - req < self.window]
-            
-            if len(requests) >= self.rate_limit:
-                lang = data.get("lang", "uz")
-                if hasattr(event, 'answer'):
-                    await event.answer(get_text("rate_limit", lang), show_alert=True)
+            if user_id and not await self.check_rate_limit(user_id):
+                logger.warning(f"Rate limit exceeded for user {user_id}")
                 return
-            
-            requests.append(current_time)
-            await cache.set(key, requests, self.window)
         
         return await handler(event, data)
+    
+    async def check_rate_limit(self, user_id: int) -> bool:
+        if not redis_manager.redis:
+            return True
+        
+        key = f"rate_limit:{user_id}"
+        current_time = int(time.time())
+        
+        try:
+            pipe = redis_manager.redis.pipeline()
+            pipe.zremrangebyscore(key, 0, current_time - self.time_window)
+            pipe.zcard(key)
+            pipe.zadd(key, {str(current_time): current_time})
+            pipe.expire(key, self.time_window)
+            
+            results = await pipe.execute()
+            request_count = results[1]
+            
+            return request_count < self.rate_limit
+        
+        except Exception as e:
+            logger.error(f"Rate limiting error: {e}")
+            return True

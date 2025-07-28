@@ -2,19 +2,51 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, BigInteger, ForeignKey, Index, JSON, Float
 from sqlalchemy.sql import func
+from sqlalchemy.pool import StaticPool
 from datetime import datetime
-from typing import Optional
+from typing import Optional, AsyncGenerator
 import enum
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL, 
-    echo=settings.DEBUG,
-    pool_pre_ping=True,
-    pool_recycle=3600
+logger = logging.getLogger(__name__)
+
+def create_database_engine():
+    engine_kwargs = {
+        "echo": settings.DEBUG,
+        "pool_pre_ping": True,
+    }
+    
+    if settings.is_sqlite:
+        engine_kwargs.update({
+            "poolclass": StaticPool,
+            "connect_args": {
+                "check_same_thread": False,
+                "timeout": 20
+            }
+        })
+    elif settings.is_postgresql:
+        engine_kwargs.update({
+            "pool_size": settings.DB_POOL_SIZE,
+            "max_overflow": settings.DB_MAX_OVERFLOW,
+            "pool_timeout": settings.DB_POOL_TIMEOUT,
+            "pool_recycle": settings.DB_POOL_RECYCLE,
+            "pool_reset_on_return": "commit"
+        })
+    
+    return create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+
+engine = create_database_engine()
+async_session = async_sessionmaker(
+    engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False,
+    autoflush=True,
+    autocommit=False
 )
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 class Base(DeclarativeBase):
     pass
@@ -24,6 +56,12 @@ class ContestStatus(enum.Enum):
     ACTIVE = "active"
     ENDED = "ended"
     CANCELLED = "cancelled"
+
+class BroadcastStatus(enum.Enum):
+    PENDING = "pending"
+    SENDING = "sending"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class User(Base):
     __tablename__ = "users"
@@ -36,13 +74,14 @@ class User(Base):
     is_active = Column(Boolean, default=True, index=True)
     is_admin = Column(Boolean, default=False, index=True)
     is_premium = Column(Boolean, default=False)
+    is_banned = Column(Boolean, default=False, index=True)
     last_activity = Column(DateTime, default=func.now(), index=True)
     created_at = Column(DateTime, default=func.now(), index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
-    contests = relationship("Contest", back_populates="owner")
-    participations = relationship("Participant", back_populates="user")
-    analytics = relationship("UserAnalytics", back_populates="user")
+    contests = relationship("Contest", back_populates="owner", lazy="dynamic")
+    participations = relationship("Participant", back_populates="user", lazy="dynamic")
+    analytics = relationship("UserAnalytics", back_populates="user", lazy="dynamic")
 
 class Channel(Base):
     __tablename__ = "channels"
@@ -55,9 +94,10 @@ class Channel(Base):
     member_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     owner = relationship("User")
-    contests = relationship("Contest", back_populates="channel")
+    contests = relationship("Contest", back_populates="channel", lazy="dynamic")
 
 class Contest(Base):
     __tablename__ = "contests"
@@ -78,13 +118,15 @@ class Contest(Base):
     prize_description = Column(Text, nullable=True)
     requirements = Column(JSON, nullable=True)
     view_count = Column(Integer, default=0)
+    participant_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now(), index=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     owner = relationship("User", back_populates="contests")
     channel = relationship("Channel", back_populates="contests")
-    participants = relationship("Participant", back_populates="contest")
-    winners = relationship("Winner", back_populates="contest")
-    analytics = relationship("ContestAnalytics", back_populates="contest")
+    participants = relationship("Participant", back_populates="contest", lazy="dynamic")
+    winners = relationship("Winner", back_populates="contest", lazy="dynamic")
+    analytics = relationship("ContestAnalytics", back_populates="contest", lazy="dynamic")
 
 class Participant(Base):
     __tablename__ = "participants"
@@ -94,12 +136,14 @@ class Participant(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     joined_at = Column(DateTime, default=func.now(), index=True)
     referrer_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    is_winner = Column(Boolean, default=False, index=True)
     
     contest = relationship("Contest", back_populates="participants")
     user = relationship("User", back_populates="participations")
     
     __table_args__ = (
         Index('idx_contest_user', 'contest_id', 'user_id', unique=True),
+        Index('idx_contest_joined', 'contest_id', 'joined_at'),
     )
 
 class Winner(Base):
@@ -110,10 +154,15 @@ class Winner(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     position = Column(Integer, nullable=False)
     prize_claimed = Column(Boolean, default=False)
+    prize_description = Column(Text, nullable=True)
     announced_at = Column(DateTime, default=func.now())
     
     contest = relationship("Contest", back_populates="winners")
     user = relationship("User")
+    
+    __table_args__ = (
+        Index('idx_contest_position', 'contest_id', 'position', unique=True),
+    )
 
 class ForceSubChannel(Base):
     __tablename__ = "force_sub_channels"
@@ -136,6 +185,10 @@ class UserAnalytics(Base):
     timestamp = Column(DateTime, default=func.now(), index=True)
     
     user = relationship("User", back_populates="analytics")
+    
+    __table_args__ = (
+        Index('idx_user_action_time', 'user_id', 'action', 'timestamp'),
+    )
 
 class ContestAnalytics(Base):
     __tablename__ = "contest_analytics"
@@ -147,6 +200,10 @@ class ContestAnalytics(Base):
     timestamp = Column(DateTime, default=func.now(), index=True)
     
     contest = relationship("Contest", back_populates="analytics")
+    
+    __table_args__ = (
+        Index('idx_contest_metric_time', 'contest_id', 'metric_name', 'timestamp'),
+    )
 
 class BroadcastMessage(Base):
     __tablename__ = "broadcast_messages"
@@ -160,17 +217,67 @@ class BroadcastMessage(Base):
     target_users = Column(JSON, nullable=True)
     sent_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
-    status = Column(String(20), default="pending")
+    total_count = Column(Integer, default=0)
+    status = Column(String(20), default="pending", index=True)
     created_at = Column(DateTime, default=func.now())
     sent_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
 
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+class DatabaseManager:
+    def __init__(self):
+        self.engine = engine
+        self.session_factory = async_session
+        self._initialized = False
+    
+    async def initialize(self, max_retries: int = 5, retry_delay: float = 1.0):
+        if self._initialized:
+            return
+        
+        for attempt in range(max_retries):
+            try:
+                await self.create_tables()
+                await self.test_connection()
+                self._initialized = True
+                logger.info("Database initialized successfully")
+                return
+            except Exception as e:
+                logger.error(f"Database initialization attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (2 ** attempt))
+                else:
+                    raise
+    
+    async def create_tables(self):
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    
+    async def test_connection(self):
+        async with self.session_factory() as session:
+            await session.execute("SELECT 1")
+    
+    async def close(self):
+        await self.engine.dispose()
+        logger.info("Database connections closed")
 
-async def get_db() -> AsyncSession:
+db_manager = DatabaseManager()
+
+@asynccontextmanager
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    if not db_manager._initialized:
+        await db_manager.initialize()
+    
     async with async_session() as session:
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()
+
+async def init_db():
+    await db_manager.initialize()
+
+async def close_db():
+    await db_manager.close()

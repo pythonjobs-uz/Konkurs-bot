@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List
 import secrets
+import os
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = secrets.token_urlsafe(32)
     
     DEBUG: bool = False
+    ENVIRONMENT: str = "development"
     
     RATE_LIMIT_MESSAGES: int = 30
     RATE_LIMIT_WINDOW: int = 60
@@ -32,10 +34,26 @@ class Settings(BaseSettings):
     MAX_PARTICIPANTS: int = 10000
     
     ANALYTICS_RETENTION_DAYS: int = 90
-    
     ENCRYPTION_KEY: str = secrets.token_urlsafe(32)
+    
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 3600
+    
+    REDIS_POOL_SIZE: int = 10
+    REDIS_TIMEOUT: int = 5
+    
+    @property
+    def is_sqlite(self) -> bool:
+        return self.DATABASE_URL.startswith("sqlite")
+    
+    @property
+    def is_postgresql(self) -> bool:
+        return self.DATABASE_URL.startswith("postgresql")
     
     class Config:
         env_file = ".env"
+        case_sensitive = True
 
 settings = Settings()

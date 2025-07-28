@@ -1,8 +1,9 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import async_session
+from app.core.database import get_db
 
 class DatabaseMiddleware(BaseMiddleware):
     async def __call__(
@@ -11,6 +12,6 @@ class DatabaseMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        async with async_session() as session:
+        async with get_db() as session:
             data["db"] = session
             return await handler(event, data)
