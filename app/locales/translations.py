@@ -1,0 +1,106 @@
+TRANSLATIONS = {
+    "uz": {
+        "main_menu": "🏠 Asosiy menyu",
+        "create_lot": "📥 Yangi Konkurs yaratish",
+        "my_lots": "📦 Konkurslarim",
+        "advertising": "📣 Reklama",
+        "my_channels": "📺 Kanallarim",
+        "support": "🛟 Yordam",
+        "analytics": "📊 Statistika",
+        "premium": "⭐ Premium",
+        
+        "welcome": "🎉 *Konkurs Bot*ga xush kelibsiz!\n\n🚀 Bu bot orqali siz o'z kanallaringizda professional konkurslar o'tkazishingiz mumkin.\n\n✨ *Imkoniyatlar:*\n• Avtomatik g'oliblar tanlash\n• Real-time statistika\n• Ko'p tilli qo'llab-quvvatlash\n• Premium funksiyalar",
+        "subscribe_sponsor": "📢 *Botdan foydalanish uchun homiy kanalga obuna bo'ling:*\n\n🎯 Bu bizga botni rivojlantirishda yordam beradi!",
+        "check_subscription": "✅ Obunani tekshirish",
+        "subscription_required": "❌ Botdan foydalanish uchun homiy kanalga obuna bo'lishingiz kerak!",
+        "subscription_confirmed": "✅ *Obuna tasdiqlandi!* Botdan foydalanishingiz mumkin.",
+        
+        "add_channel_first": "📺 *Kanalingizni botga qo'shing*\n\n1️⃣ Kanalingizga botni admin qilib qo'shing\n2️⃣ Kanal ID sini yoki @username ni yuboring:",
+        "channel_added": "✅ *Kanal muvaffaqiyatli qo'shildi!*\n\n📊 Kanal ma'lumotlari yangilandi.",
+        "send_contest_image": "🖼 *Konkurs uchun rasm yuboring:*\n\n💡 *Maslahat:* Yuqori sifatli rasm tanlang",
+        "send_description": "📝 *Konkurs tavsifini yuboring:*\n\n✨ Markdown formatidan foydalanishingiz mumkin:\n• **qalin matn**\n• *kursiv*\n• `kod`",
+        "participate_button_text": "🔘 *'Qatnashish' tugmasi matnini kiriting:*\n\n💡 Masalan: '🎁 Sovg'aga qatnashish'",
+        "winners_count": "🏆 *G'oliblar sonini kiriting:*\n\n📝 1 dan {max_winners} gacha",
+        "start_time": "⏰ *Konkurs boshlanish vaqtini kiriting:*\n\n📅 Format: YYYY-MM-DD HH:MM\n💡 Masalan: 2024-12-25 15:30",
+        "end_time": "⌛ *Konkurs tugash vaqtini yoki qatnashchilar sonini kiriting:*\n\n📅 Vaqt: YYYY-MM-DD HH:MM\n👥 Yoki qatnashchilar soni: 100",
+        "select_channel": "📺 *Konkurs e'lon qilinadigan kanalni tanlang:*",
+        "contest_created": "🎉 *Konkurs muvaffaqiyatli yaratildi!*\n\n⏰ Belgilangan vaqtda avtomatik e'lon qilinadi.",
+        
+        "join_contest": "🤝 Konkursga qatnashish",
+        "already_participating": "✅ Siz allaqachon konkursda qatnashyapsiz!",
+        "participation_confirmed": "🎉 *Siz konkursda qatnashyapsiz!*\n\n🍀 Omad tilaymiz!",
+        "contest_ended": "⏰ Konkurs tugagan!",
+        
+        "winners_announced": "🏆 *G'oliblar e'lon qilindi:*",
+        "winner_position": "🥇 *{position}-o'rin:*",
+        
+        "error_occurred": "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.",
+        "invalid_format": "❌ Noto'g'ri format. Qaytadan kiriting.",
+        "channel_not_found": "❌ Kanal topilmadi yoki bot admin emas.",
+        "not_subscribed": "❌ Siz barcha majburiy kanallarga obuna bo'lmagan!",
+        "rate_limit": "⏳ Juda tez! Biroz kuting va qaytadan urinib ko'ring.",
+        
+        "admin_panel": "👨‍💼 Admin Panel",
+        "broadcast_message": "📢 Xabar yuborish",
+        "user_statistics": "📊 Foydalanuvchi statistikasi",
+        "manage_channels": "📺 Kanallarni boshqarish",
+        "system_health": "🔧 Tizim holati",
+        
+        "premium_features": "⭐ *Premium Imkoniyatlar*\n\n🚀 Qo'shimcha funksiyalar:\n• Cheksiz konkurslar\n• Kengaytirilgan statistika\n• Maxsus dizayn\n• Prioritet qo'llab-quvvatlash",
+    },
+    "ru": {
+        "main_menu": "🏠 Главное меню",
+        "create_lot": "📥 Создать конкурс",
+        "my_lots": "📦 Мои конкурсы",
+        "advertising": "📣 Реклама",
+        "my_channels": "📺 Мои каналы",
+        "support": "🛟 Поддержка",
+        "analytics": "📊 Аналитика",
+        "premium": "⭐ Премиум",
+        
+        "welcome": "🎉 Добро пожаловать в *Konkurs Bot*!\n\n🚀 С помощью этого бота вы можете проводить профессиональные конкурсы в своих каналах.\n\n✨ *Возможности:*\n• Автоматический выбор победителей\n• Статистика в реальном времени\n• Многоязычная поддержка\n• Премиум функции",
+        "subscribe_sponsor": "📢 *Для использования бота подпишитесь на спонсорский канал:*\n\n🎯 Это помогает нам развивать бот!",
+        "check_subscription": "✅ Проверить подписку",
+        "subscription_required": "❌ Для использования бота необходимо подписаться на спонсорский канал!",
+        "subscription_confirmed": "✅ *Подписка подтверждена!* Можете пользоваться ботом.",
+        
+        "add_channel_first": "📺 *Добавьте свой канал в бот*\n\n1️⃣ Добавьте бота как администратора в канал\n2️⃣ Отправьте ID канала или @username:",
+        "channel_added": "✅ *Канал успешно добавлен!*\n\n📊 Информация о канале обновлена.",
+        "send_contest_image": "🖼 *Отправьте изображение для конкурса:*\n\n💡 *Совет:* Выберите качественное изображение",
+        "send_description": "📝 *Отправьте описание конкурса:*\n\n✨ Можете использовать Markdown:\n• **жирный текст**\n• *курсив*\n• `код`",
+        "participate_button_text": "🔘 *Введите текст кнопки 'Участвовать':*\n\n💡 Например: '🎁 Участвовать в розыгрыше'",
+        "winners_count": "🏆 *Введите количество победителей:*\n\n📝 От 1 до {max_winners}",
+        "start_time": "⏰ *Введите время начала конкурса:*\n\n📅 Формат: YYYY-MM-DD HH:MM\n💡 Например: 2024-12-25 15:30",
+        "end_time": "⌛ *Введите время окончания или количество участников:*\n\n📅 Время: YYYY-MM-DD HH:MM\n👥 Или количество участников: 100",
+        "select_channel": "📺 *Выберите канал для публикации конкурса:*",
+        "contest_created": "🎉 *Конкурс успешно создан!*\n\n⏰ Будет автоматически опубликован в назначенное время.",
+        
+        "join_contest": "🤝 Участвовать в конкурсе",
+        "already_participating": "✅ Вы уже участвуете в конкурсе!",
+        "participation_confirmed": "🎉 *Вы участвуете в конкурсе!*\n\n🍀 Удачи!",
+        "contest_ended": "⏰ Конкурс завершен!",
+        
+        "winners_announced": "🏆 *Объявлены победители:*",
+        "winner_position": "🥇 *{position} место:*",
+        
+        "error_occurred": "❌ Произошла ошибка. Попробуйте еще раз.",
+        "invalid_format": "❌ Неверный формат. Введите еще раз.",
+        "channel_not_found": "❌ Канал не найден или бот не является администратором.",
+        "not_subscribed": "❌ Вы не подписаны на все обязательные каналы!",
+        "rate_limit": "⏳ Слишком быстро! Подождите немного и попробуйте снова.",
+        
+        "admin_panel": "👨‍💼 Админ панель",
+        "broadcast_message": "📢 Отправить сообщение",
+        "user_statistics": "📊 Статистика пользователей",
+        "manage_channels": "📺 Управление каналами",
+        "system_health": "🔧 Состояние системы",
+        
+        "premium_features": "⭐ *Премиум возможности*\n\n🚀 Дополнительные функции:\n• Неограниченные конкурсы\n• Расширенная аналитика\n• Особый дизайн\n• Приоритетная поддержка",
+    }
+}
+
+def get_text(key: str, lang: str = "uz", **kwargs) -> str:
+    text = TRANSLATIONS.get(lang, TRANSLATIONS["uz"]).get(key, key)
+    if kwargs:
+        return text.format(**kwargs)
+    return text
