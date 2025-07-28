@@ -8,7 +8,6 @@ from app.services.subscription_service import SubscriptionService
 from app.keyboards.inline import kb
 from app.locales.translations import get_text
 from app.core.config import settings
-from app.core.metrics import metrics
 
 router = Router()
 
@@ -25,8 +24,6 @@ async def start_command(message: Message, db: AsyncSession, lang: str):
         language_code=lang
     )
     
-    metrics.record_user_action("start")
-    
     await message.answer_photo(
         photo=settings.WELCOME_IMAGE_URL,
         caption=get_text("welcome", lang),
@@ -35,7 +32,7 @@ async def start_command(message: Message, db: AsyncSession, lang: str):
     
     if settings.SPONSOR_CHANNEL_ID:
         is_subscribed = await subscription_service.check_subscription(
-            message.from_user.id, settings.SPONSOR_CHANNEL_ID
+            message.from_user.id, settings.SPONSOR_CHANNEL_ID, message.bot
         )
         
         if not is_subscribed:
@@ -59,7 +56,7 @@ async def check_subscription_callback(callback: CallbackQuery, db: AsyncSession,
     
     if settings.SPONSOR_CHANNEL_ID:
         is_subscribed = await subscription_service.check_subscription(
-            callback.from_user.id, settings.SPONSOR_CHANNEL_ID
+            callback.from_user.id, settings.SPONSOR_CHANNEL_ID, callback.bot
         )
         
         if is_subscribed:

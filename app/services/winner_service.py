@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from typing import List
 import random
 from datetime import datetime
@@ -23,7 +23,7 @@ class WinnerService:
             .join(Participant)
             .where(Participant.contest_id == contest_id)
         )
-        participants = result.scalars().all()
+        participants = list(result.scalars().all())
         
         if not participants:
             return []
@@ -45,6 +45,18 @@ class WinnerService:
                 position=position
             )
             self.db.add(winner_record)
+            
+            participant_result = await self.db.execute(
+                select(Participant).where(
+                    and_(
+                        Participant.contest_id == contest_id,
+                        Participant.user_id == winner.id
+                    )
+                )
+            )
+            participant = participant_result.scalar_one_or_none()
+            if participant:
+                participant.is_winner = True
         
         await self.db.commit()
         
@@ -64,7 +76,7 @@ class WinnerService:
             .where(Winner.contest_id == contest_id)
             .order_by(Winner.position)
         )
-        winners = result.scalars().all()
+        winners = list(result.scalars().all())
         
         if winners:
             await cache.set(cache_key, winners, 3600)
@@ -94,7 +106,7 @@ class WinnerService:
             .where(Winner.user_id == user_id)
             .order_by(Winner.announced_at.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def get_winner_statistics(self, user_id: int) -> dict:
         total_wins = await self.db.execute(

@@ -1,3 +1,5 @@
+# Empty file to make handlers a package
+
 from aiogram import Dispatcher
 
 from app.handlers.start import router as start_router

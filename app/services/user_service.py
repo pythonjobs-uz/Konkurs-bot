@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
@@ -67,17 +67,23 @@ class UserService:
     
     async def get_all_active_users(self) -> List[User]:
         result = await self.db.execute(
-            select(User).where(User.is_active == True)
+            select(User).where(
+                and_(User.is_active == True, User.is_banned == False)
+            )
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def get_premium_users(self) -> List[User]:
         result = await self.db.execute(
             select(User).where(
-                and_(User.is_active == True, User.is_premium == True)
+                and_(
+                    User.is_active == True, 
+                    User.is_premium == True,
+                    User.is_banned == False
+                )
             )
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def update_premium_status(self, user_id: int, is_premium: bool):
         result = await self.db.execute(
@@ -87,6 +93,21 @@ class UserService:
         
         if user:
             user.is_premium = is_premium
+            await self.db.commit()
+            
+            cache_key = f"user:{user_id}"
+            await cache.delete(cache_key)
+    
+    async def ban_user(self, user_id: int, banned: bool = True):
+        result = await self.db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            user.is_banned = banned
+            if banned:
+                user.is_active = False
             await self.db.commit()
             
             cache_key = f"user:{user_id}"
@@ -102,19 +123,25 @@ class UserService:
         total_users_result = await self.db.execute(
             select(func.count(User.id))
         )
-        total_users = total_users_result.scalar()
+        total_users = total_users_result.scalar() or 0
         
         active_users_result = await self.db.execute(
-            select(func.count(User.id)).where(User.is_active == True)
+            select(func.count(User.id)).where(
+                and_(User.is_active == True, User.is_banned == False)
+            )
         )
-        active_users = active_users_result.scalar()
+        active_users = active_users_result.scalar() or 0
         
         premium_users_result = await self.db.execute(
             select(func.count(User.id)).where(
-                and_(User.is_active == True, User.is_premium == True)
+                and_(
+                    User.is_active == True, 
+                    User.is_premium == True,
+                    User.is_banned == False
+                )
             )
         )
-        premium_users = premium_users_result.scalar()
+        premium_users = premium_users_result.scalar() or 0
         
         today = datetime.utcnow().date()
         new_today_result = await self.db.execute(
@@ -122,17 +149,17 @@ class UserService:
                 func.date(User.created_at) == today
             )
         )
-        new_today = new_today_result.scalar()
+        new_today = new_today_result.scalar() or 0
         
         total_contests_result = await self.db.execute(
             select(func.count(Contest.id))
         )
-        total_contests = total_contests_result.scalar()
+        total_contests = total_contests_result.scalar() or 0
         
         active_contests_result = await self.db.execute(
             select(func.count(Contest.id)).where(Contest.status == "active")
         )
-        active_contests = active_contests_result.scalar()
+        active_contests = active_contests_result.scalar() or 0
         
         stats = {
             "total_users": total_users,
@@ -151,8 +178,29 @@ class UserService:
         
         result = await self.db.execute(
             select(func.count(User.id)).where(
-                User.last_activity >= since_date
+                and_(
+                    User.last_activity >= since_date,
+                    User.is_active == True,
+                    User.is_banned == False
+                )
             )
         )
         
-        return {"active_users": result.scalar()}
+        return {"active_users": result.scalar() or 0}
+    
+    async def search_users(self, query: str, limit: int = 50) -> List[User]:
+        search_pattern = f"%{query}%"
+        result = await self.db.execute(
+            select(User).where(
+                and_(
+                    User.is_active == True,
+                    User.is_banned == False,
+                    or_(
+                        User.username.ilike(search_pattern),
+                        User.first_name.ilike(search_pattern),
+                        User.last_name.ilike(search_pattern)
+                    )
+                )
+            ).limit(limit)
+        )
+        return list(result.scalars().all())

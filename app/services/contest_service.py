@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc
+from sqlalchemy import select, func, and_, desc, or_
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from typing import Optional, List
@@ -44,6 +44,7 @@ class ContestService:
         await self.db.refresh(contest)
         
         await cache.delete("contest_statistics")
+        await cache.delete("active_contests")
         
         return contest
     
@@ -57,7 +58,6 @@ class ContestService:
         result = await self.db.execute(
             select(Contest)
             .options(
-                selectinload(Contest.participants).selectinload(Participant.user),
                 selectinload(Contest.owner),
                 selectinload(Contest.channel)
             )
@@ -73,19 +73,18 @@ class ContestService:
     async def get_user_contests(self, user_id: int, limit: int = 50, offset: int = 0) -> List[Contest]:
         result = await self.db.execute(
             select(Contest)
-            .options(selectinload(Contest.participants))
             .where(Contest.owner_id == user_id)
             .order_by(desc(Contest.created_at))
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def get_user_contests_count(self, user_id: int) -> int:
         result = await self.db.execute(
             select(func.count(Contest.id)).where(Contest.owner_id == user_id)
         )
-        return result.scalar()
+        return result.scalar() or 0
     
     async def get_active_contests(self) -> List[Contest]:
         cache_key = "active_contests"
@@ -97,7 +96,6 @@ class ContestService:
         now = datetime.utcnow()
         result = await self.db.execute(
             select(Contest)
-            .options(selectinload(Contest.participants))
             .where(
                 and_(
                     Contest.status.in_(["pending", "active"]),
@@ -105,10 +103,27 @@ class ContestService:
                 )
             )
         )
-        contests = result.scalars().all()
+        contests = list(result.scalars().all())
         
         await cache.set(cache_key, contests, 300)
         return contests
+    
+    async def get_contests_by_status(self, status: str, limit: int = 50) -> List[Contest]:
+        result = await self.db.execute(
+            select(Contest)
+            .where(Contest.status == status)
+            .order_by(desc(Contest.created_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+    
+    async def get_recent_contests(self, limit: int = 50) -> List[Contest]:
+        result = await self.db.execute(
+            select(Contest)
+            .order_by(desc(Contest.created_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
     
     async def update_contest_status(self, contest_id: int, status: str):
         result = await self.db.execute(
@@ -118,6 +133,7 @@ class ContestService:
         
         if contest:
             contest.status = status
+            contest.updated_at = datetime.utcnow()
             await self.db.commit()
             
             await cache.delete(f"contest:{contest_id}")
@@ -148,26 +164,63 @@ class ContestService:
             
             await cache.delete(f"contest:{contest_id}")
     
+    async def update_participant_count(self, contest_id: int):
+        participant_count = await self.db.execute(
+            select(func.count(Participant.id)).where(Participant.contest_id == contest_id)
+        )
+        count = participant_count.scalar() or 0
+        
+        result = await self.db.execute(
+            select(Contest).where(Contest.id == contest_id)
+        )
+        contest = result.scalar_one_or_none()
+        
+        if contest:
+            contest.participant_count = count
+            await self.db.commit()
+            
+            await cache.delete(f"contest:{contest_id}")
+    
     async def get_trending_contests(self, limit: int = 10) -> List[Contest]:
         result = await self.db.execute(
             select(Contest)
-            .options(selectinload(Contest.participants))
             .where(Contest.status == "active")
             .order_by(desc(Contest.view_count))
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def search_contests(self, query: str, limit: int = 20) -> List[Contest]:
+        search_pattern = f"%{query}%"
         result = await self.db.execute(
             select(Contest)
             .where(
                 and_(
                     Contest.status.in_(["active", "pending"]),
-                    Contest.title.ilike(f"%{query}%")
+                    or_(
+                        Contest.title.ilike(search_pattern),
+                        Contest.description.ilike(search_pattern)
+                    )
                 )
             )
             .order_by(desc(Contest.created_at))
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
+    
+    async def delete_contest(self, contest_id: int) -> bool:
+        result = await self.db.execute(
+            select(Contest).where(Contest.id == contest_id)
+        )
+        contest = result.scalar_one_or_none()
+        
+        if contest:
+            await self.db.delete(contest)
+            await self.db.commit()
+            
+            await cache.delete(f"contest:{contest_id}")
+            await cache.delete("active_contests")
+            await cache.delete("contest_statistics")
+            return True
+        
+        return False

@@ -1,4 +1,3 @@
-from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,7 +10,7 @@ class SubscriptionService:
     def __init__(self):
         pass
     
-    async def check_subscription(self, user_id: int, channel_id: int) -> bool:
+    async def check_subscription(self, user_id: int, channel_id: int, bot) -> bool:
         cache_key = f"subscription:{user_id}:{channel_id}"
         cached_result = await cache.get(cache_key)
         
@@ -19,25 +18,21 @@ class SubscriptionService:
             return cached_result
         
         try:
-            from main import bot
             member = await bot.get_chat_member(channel_id, user_id)
             is_subscribed = member.status in ['member', 'administrator', 'creator']
             
             await cache.set(cache_key, is_subscribed, 300)
             return is_subscribed
-        except TelegramBadRequest:
+        except (TelegramBadRequest, Exception):
             return False
     
-    async def check_multiple_subscriptions(self, user_id: int, channel_ids: List[int]) -> bool:
+    async def check_multiple_subscriptions(self, user_id: int, channel_ids: List[int], bot) -> bool:
         for channel_id in channel_ids:
-            if not await self.check_subscription(user_id, channel_id):
+            if not await self.check_subscription(user_id, channel_id, bot):
                 return False
         return True
     
-    async def get_force_sub_channels(self, db: AsyncSession = None) -> List[ForceSubChannel]:
-        if not db:
-            return []
-        
+    async def get_force_sub_channels(self, db: AsyncSession) -> List[ForceSubChannel]:
         cache_key = "force_sub_channels"
         cached_channels = await cache.get(cache_key)
         
@@ -49,7 +44,7 @@ class SubscriptionService:
             .where(ForceSubChannel.is_active == True)
             .order_by(ForceSubChannel.priority.desc())
         )
-        channels = result.scalars().all()
+        channels = list(result.scalars().all())
         
         await cache.set(cache_key, channels, 1800)
         return channels

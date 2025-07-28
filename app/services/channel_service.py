@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, desc
 from typing import List, Optional, Dict
 
 from app.core.database import Channel
@@ -28,6 +28,7 @@ class ChannelService:
             existing_channel.owner_id = owner_id
             existing_channel.member_count = member_count
             existing_channel.is_active = True
+            existing_channel.updated_at = func.now()
             await self.db.commit()
             await self.db.refresh(existing_channel)
             
@@ -66,7 +67,7 @@ class ChannelService:
                     Channel.owner_id == user_id,
                     Channel.is_active == True
                 )
-            )
+            ).order_by(desc(Channel.member_count))
         )
         channels = result.scalars().all()
         
@@ -108,6 +109,7 @@ class ChannelService:
         
         if channel:
             channel.member_count = member_count
+            channel.updated_at = func.now()
             await self.db.commit()
             
             await cache.delete(f"channel:{channel_id}")
@@ -121,6 +123,7 @@ class ChannelService:
         
         if channel:
             channel.is_active = False
+            channel.updated_at = func.now()
             await self.db.commit()
             
             await cache.delete(f"channel:{channel_id}")
@@ -130,7 +133,13 @@ class ChannelService:
         result = await self.db.execute(
             select(Channel)
             .where(Channel.is_active == True)
-            .order_by(Channel.member_count.desc())
+            .order_by(desc(Channel.member_count))
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
+    
+    async def get_all_active_channels(self) -> List[Channel]:
+        result = await self.db.execute(
+            select(Channel).where(Channel.is_active == True)
+        )
+        return list(result.scalars().all())

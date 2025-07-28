@@ -10,10 +10,11 @@ from app.services.contest_service import ContestService
 from app.services.channel_service import ChannelService
 from app.services.participation_service import ParticipationService
 from app.services.analytics_service import AnalyticsService
+from app.services.subscription_service import SubscriptionService
+from app.services.user_service import UserService
 from app.keyboards.inline import kb
 from app.locales.translations import get_text
 from app.core.config import settings
-from app.core.metrics import metrics
 
 router = Router()
 
@@ -211,8 +212,6 @@ async def process_channel_selection(callback: CallbackQuery, state: FSMContext, 
         {"contest_id": contest.id}
     )
     
-    metrics.record_contest("created")
-    
     await callback.message.edit_text(
         get_text("contest_created", lang),
         reply_markup=kb.main_menu(lang)
@@ -226,6 +225,7 @@ async def join_contest_callback(callback: CallbackQuery, db: AsyncSession, lang:
     participation_service = ParticipationService(db)
     contest_service = ContestService(db)
     analytics_service = AnalyticsService(db)
+    subscription_service = SubscriptionService()
     
     contest = await contest_service.get_contest(contest_id)
     if not contest or contest.status != "active":
@@ -243,12 +243,9 @@ async def join_contest_callback(callback: CallbackQuery, db: AsyncSession, lang:
             await callback.answer("Konkurs to'ldi!" if lang == "uz" else "Конкурс заполнен!", show_alert=True)
             return
     
-    from app.services.subscription_service import SubscriptionService
-    subscription_service = SubscriptionService()
-    
-    force_sub_channels = await subscription_service.get_force_sub_channels()
+    force_sub_channels = await subscription_service.get_force_sub_channels(db)
     for channel in force_sub_channels:
-        if not await subscription_service.check_subscription(callback.from_user.id, channel.channel_id):
+        if not await subscription_service.check_subscription(callback.from_user.id, channel.channel_id, callback.bot):
             await callback.answer(get_text("not_subscribed", lang), show_alert=True)
             return
     
@@ -265,98 +262,7 @@ async def join_contest_callback(callback: CallbackQuery, db: AsyncSession, lang:
         {"contest_id": contest_id}
     )
     
+    await contest_service.update_participant_count(contest_id)
+    
     await callback.message.edit_reply_markup(reply_markup=new_keyboard)
     await callback.answer(get_text("participation_confirmed", lang), show_alert=True)
-
-@router.callback_query(F.data.startswith("contest_stats:"))
-async def contest_stats_callback(callback: CallbackQuery, db: AsyncSession, lang: str):
-    contest_id = int(callback.data.split(":")[1])
-    
-    contest_service = ContestService(db)
-    analytics_service = AnalyticsService(db)
-    
-    contest = await contest_service.get_contest(contest_id)
-    if not contest:
-        await callback.answer("Konkurs topilmadi!" if lang == "uz" else "Конкурс не найден!", show_alert=True)
-        return
-    
-    stats = await analytics_service.get_contest_analytics(contest_id)
-    participants_count = len(contest.participants) if contest.participants else 0
-    
-    text = f"📊 *{contest.title} statistikasi:*\n\n" if lang == "uz" else f"📊 *Статистика {contest.title}:*\n\n"
-    text += f"👥 Qatnashchilar: {participants_count}\n"
-    text += f"👀 Ko'rishlar: {contest.view_count}\n"
-    text += f"📅 Yaratilgan: {contest.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-    text += f"▶️ Boshlanish: {contest.start_time.strftime('%d.%m.%Y %H:%M')}\n"
-    
-    if contest.end_time:
-        text += f"⏹ Tugash: {contest.end_time.strftime('%d.%m.%Y %H:%M')}\n"
-    elif contest.max_participants:
-        text += f"🎯 Maksimal: {contest.max_participants} kishi\n"
-    
-    text += f"🏆 G'oliblar: {contest.winners_count}\n"
-    text += f"📈 Status: {contest.status.upper()}"
-    
-    await callback.message.edit_text(
-        text,
-        reply_markup=kb.contest_management(contest_id, contest.status, lang)
-    )
-
-@router.callback_query(F.data.startswith("start_contest:"))
-async def start_contest_callback(callback: CallbackQuery, db: AsyncSession, lang: str):
-    if callback.from_user.id not in settings.ADMIN_IDS:
-        contest_id = int(callback.data.split(":")[1])
-        contest_service = ContestService(db)
-        contest = await contest_service.get_contest(contest_id)
-        
-        if not contest or contest.owner_id != callback.from_user.id:
-            await callback.answer("Ruxsat yo'q!" if lang == "uz" else "Доступ запрещен!", show_alert=True)
-            return
-    
-    contest_id = int(callback.data.split(":")[1])
-    contest_service = ContestService(db)
-    
-    await contest_service.update_contest_status(contest_id, "active")
-    await callback.answer("Konkurs boshlandi!" if lang == "uz" else "Конкурс запущен!", show_alert=True)
-    
-    contest = await contest_service.get_contest(contest_id)
-    await callback.message.edit_reply_markup(
-        reply_markup=kb.contest_management(contest_id, "active", lang)
-    )
-
-@router.callback_query(F.data.startswith("stop_contest:"))
-async def stop_contest_callback(callback: CallbackQuery, db: AsyncSession, lang: str):
-    contest_id = int(callback.data.split(":")[1])
-    contest_service = ContestService(db)
-    
-    contest = await contest_service.get_contest(contest_id)
-    if not contest or (contest.owner_id != callback.from_user.id and callback.from_user.id not in settings.ADMIN_IDS):
-        await callback.answer("Ruxsat yo'q!" if lang == "uz" else "Доступ запрещен!", show_alert=True)
-        return
-    
-    from app.services.winner_service import WinnerService
-    winner_service = WinnerService(db)
-    
-    await contest_service.update_contest_status(contest_id, "ended")
-    winners = await winner_service.select_winners(contest_id, contest.winners_count)
-    
-    if winners and contest.message_id:
-        try:
-            winners_text = get_text("winners_announced", lang) + "\n\n"
-            for i, winner in enumerate(winners, 1):
-                user_link = f"[{winner.first_name or 'User'}](tg://user?id={winner.id})"
-                winners_text += get_text("winner_position", lang, position=i) + f" {user_link}\n"
-            
-            await callback.bot.send_message(
-                chat_id=contest.channel_id,
-                text=winners_text,
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            pass
-    
-    await callback.answer("Konkurs to'xtatildi va g'oliblar e'lon qilindi!" if lang == "uz" else "Конкурс остановлен и победители объявлены!", show_alert=True)
-    
-    await callback.message.edit_reply_markup(
-        reply_markup=kb.contest_management(contest_id, "ended", lang)
-    )

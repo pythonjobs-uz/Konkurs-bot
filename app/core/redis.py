@@ -1,8 +1,10 @@
 import redis.asyncio as redis
 from typing import Optional, Any, Union
 import json
+import pickle
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from app.core.config import settings
 
@@ -20,8 +22,7 @@ class RedisManager:
         try:
             self.redis = redis.from_url(
                 settings.REDIS_URL,
-                encoding="utf-8",
-                decode_responses=True,
+                decode_responses=False,
                 socket_timeout=settings.REDIS_TIMEOUT,
                 socket_connect_timeout=settings.REDIS_TIMEOUT,
                 retry_on_timeout=True,
@@ -47,7 +48,7 @@ class RedisManager:
         try:
             value = await self.redis.get(key)
             if value:
-                return json.loads(value)
+                return pickle.loads(value)
         except Exception as e:
             logger.error(f"Redis GET error for key {key}: {e}")
         return None
@@ -57,7 +58,7 @@ class RedisManager:
             return False
         
         try:
-            serialized_value = json.dumps(value, default=str)
+            serialized_value = pickle.dumps(value)
             await self.redis.set(key, serialized_value, ex=expire)
             return True
         except Exception as e:
@@ -104,8 +105,12 @@ class RedisManager:
         except Exception as e:
             logger.error(f"Redis EXPIRE error for key {key}: {e}")
             return False
+    
+    async def set_with_ttl(self, key: str, value: Any, ttl: timedelta) -> bool:
+        return await self.set(key, value, int(ttl.total_seconds()))
 
 redis_manager = RedisManager()
+cache = redis_manager
 
 async def init_redis():
     await redis_manager.initialize()
@@ -113,8 +118,7 @@ async def init_redis():
 async def close_redis():
     await redis_manager.close()
 
-@asynccontextmanager
 async def get_redis():
     if not redis_manager._initialized:
         await redis_manager.initialize()
-    yield redis_manager
+    return redis_manager

@@ -20,7 +20,7 @@ from app.middlewares.throttling import ThrottlingMiddleware
 from app.middlewares.analytics import AnalyticsMiddleware
 from app.handlers import start, menu, contest, admin
 from app.api.routes import router as api_router
-from app.services.scheduler import scheduler
+from app.services.scheduler import scheduler, scheduler_service
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -61,6 +61,8 @@ async def lifespan(app: FastAPI):
         
         app.state.bot = bot
         app.state.dp = dp
+        
+        scheduler_service.set_bot(bot)
         
         if settings.USE_WEBHOOK and settings.WEBHOOK_URL:
             await bot.set_webhook(
@@ -114,7 +116,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(api_router, prefix="/api")
     
     return app
 

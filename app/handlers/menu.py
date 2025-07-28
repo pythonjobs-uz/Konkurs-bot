@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.user_service import UserService
 from app.services.contest_service import ContestService
 from app.services.analytics_service import AnalyticsService
+from app.services.channel_service import ChannelService
 from app.keyboards.inline import kb
 from app.locales.translations import get_text
 from app.core.config import settings
@@ -34,14 +35,13 @@ async def my_lots_callback(callback: CallbackQuery, db: AsyncSession, lang: str)
     
     for contest in contests:
         status_emoji = {"pending": "🟡", "active": "🟢", "ended": "🔴", "cancelled": "⚫"}.get(contest.status, "🟡")
-        participants_count = len(contest.participants) if contest.participants else 0
         
         text += f"{status_emoji} *{contest.title}*\n"
         text += f"   📅 {contest.start_time.strftime('%d.%m.%Y %H:%M')}\n"
-        text += f"   👥 {participants_count} qatnashuvchi\n"
+        text += f"   👥 {contest.participant_count} qatnashuvchi\n"
         text += f"   📊 {contest.view_count} ko'rishlar\n\n"
     
-    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang))
+    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "analytics")
 async def analytics_callback(callback: CallbackQuery, db: AsyncSession, lang: str):
@@ -52,9 +52,9 @@ async def analytics_callback(callback: CallbackQuery, db: AsyncSession, lang: st
     text += f"🏆 Jami konkurslar: {user_stats.get('total_contests', 0)}\n"
     text += f"👥 Jami qatnashchilar: {user_stats.get('total_participants', 0)}\n"
     text += f"📈 Eng ko'p qatnashuvchi: {user_stats.get('max_participants', 0)}\n"
-    text += f"🎯 Muvaffaqiyat darajasi: {user_stats.get('success_rate', 0):.1f}%\n"
+    text += f"🎯 Muvaffaqiyat darajasi: {user_stats.get('participation_rate', 0):.1f}%\n"
     
-    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang))
+    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "advertising")
 async def advertising_callback(callback: CallbackQuery, lang: str):
@@ -62,11 +62,10 @@ async def advertising_callback(callback: CallbackQuery, lang: str):
     text += "Reklama joylashtirish uchun admin bilan bog'laning.\n\n" if lang == "uz" else "Для размещения рекламы свяжитесь с администратором.\n\n"
     text += "💰 Narxlar:\n• Banner - 50,000 so'm\n• Post - 100,000 so'm\n• Video - 150,000 so'm"
     
-    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang))
+    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "my_channels")
 async def my_channels_callback(callback: CallbackQuery, db: AsyncSession, lang: str):
-    from app.services.channel_service import ChannelService
     channel_service = ChannelService(db)
     channels = await channel_service.get_user_channels(callback.from_user.id)
     
@@ -81,7 +80,7 @@ async def my_channels_callback(callback: CallbackQuery, db: AsyncSession, lang: 
                 text += f"  🔗 @{channel['username']}\n"
             text += "\n"
     
-    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang))
+    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "support")
 async def support_callback(callback: CallbackQuery, lang: str):
@@ -91,7 +90,7 @@ async def support_callback(callback: CallbackQuery, lang: str):
     text += "💬 Telegram: @konkurs_support\n"
     text += "🕐 Ish vaqti: 9:00-18:00"
     
-    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang))
+    await callback.message.edit_text(text, reply_markup=kb.main_menu(lang), parse_mode="Markdown")
 
 @router.callback_query(F.data == "admin_panel")
 async def admin_panel_callback(callback: CallbackQuery, lang: str):

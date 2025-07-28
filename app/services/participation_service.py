@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from typing import List
+from sqlalchemy import select, func, and_, desc
+from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import Participant, User
@@ -10,7 +10,7 @@ class ParticipationService:
     def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def add_participant(self, contest_id: int, user_id: int, referrer_id: Optional[int] = None) -> Participant:
+    async def add_participant(self, contest_id: int, user_id: int, referrer_id: Optional[int] = None) -> Optional[Participant]:
         existing = await self.db.execute(
             select(Participant).where(
                 and_(
@@ -35,6 +35,7 @@ class ParticipationService:
         
         await cache.delete(f"participants_count:{contest_id}")
         await cache.delete(f"contest:{contest_id}")
+        await cache.delete(f"user_participations:{user_id}")
         
         return participant
     
@@ -70,7 +71,7 @@ class ParticipationService:
                 Participant.contest_id == contest_id
             )
         )
-        count = result.scalar()
+        count = result.scalar() or 0
         
         await cache.set(cache_key, count, 300)
         return count
@@ -83,17 +84,17 @@ class ParticipationService:
             .order_by(Participant.joined_at)
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def get_recent_participants(self, contest_id: int, limit: int = 10) -> List[User]:
         result = await self.db.execute(
             select(User)
             .join(Participant)
             .where(Participant.contest_id == contest_id)
-            .order_by(Participant.joined_at.desc())
+            .order_by(desc(Participant.joined_at))
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def remove_participant(self, contest_id: int, user_id: int):
         result = await self.db.execute(
@@ -113,11 +114,39 @@ class ParticipationService:
             await cache.delete(f"participants_count:{contest_id}")
             await cache.delete(f"participation:{contest_id}:{user_id}")
             await cache.delete(f"contest:{contest_id}")
+            await cache.delete(f"user_participations:{user_id}")
     
     async def get_user_participations(self, user_id: int) -> List[Participant]:
+        cache_key = f"user_participations:{user_id}"
+        cached_participations = await cache.get(cache_key)
+        
+        if cached_participations:
+            return cached_participations
+        
         result = await self.db.execute(
             select(Participant)
             .where(Participant.user_id == user_id)
-            .order_by(Participant.joined_at.desc())
+            .order_by(desc(Participant.joined_at))
         )
-        return result.scalars().all()
+        participations = list(result.scalars().all())
+        
+        await cache.set(cache_key, participations, 1800)
+        return participations
+    
+    async def get_participation_stats(self, contest_id: int) -> dict:
+        total_participants = await self.get_participants_count(contest_id)
+        
+        today = datetime.utcnow().date()
+        today_participants = await self.db.execute(
+            select(func.count(Participant.id)).where(
+                and_(
+                    Participant.contest_id == contest_id,
+                    func.date(Participant.joined_at) == today
+                )
+            )
+        )
+        
+        return {
+            "total_participants": total_participants,
+            "today_participants": today_participants.scalar() or 0
+        }

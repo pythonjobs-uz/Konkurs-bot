@@ -1,12 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio
 import logging
 from typing import Optional
+from datetime import datetime
 
 from app.services.user_service import UserService
 from app.core.database import BroadcastMessage
-from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ class BroadcastService:
         video_file_id: Optional[str] = None,
         button_text: Optional[str] = None,
         button_url: Optional[str] = None,
-        target_users: Optional[list] = None
+        target_users: Optional[list] = None,
+        bot=None
     ) -> int:
         user_service = UserService(self.db)
         
@@ -30,7 +31,7 @@ class BroadcastService:
             users = []
             for user_id in target_users:
                 user = await user_service.get_user(user_id)
-                if user:
+                if user and user.is_active and not user.is_banned:
                     users.append(user)
         else:
             users = await user_service.get_all_active_users()
@@ -41,12 +42,18 @@ class BroadcastService:
             image_file_id=photo_file_id,
             button_text=button_text,
             button_url=button_url,
-            target_users=target_users
+            target_users=target_users,
+            total_count=len(users),
+            status="sending"
         )
         
         self.db.add(broadcast_record)
         await self.db.commit()
         await self.db.refresh(broadcast_record)
+        
+        if not bot:
+            logger.error("Bot instance not provided")
+            return 0
         
         success_count = 0
         failed_count = 0
@@ -57,8 +64,6 @@ class BroadcastService:
                 InlineKeyboardButton(text=button_text, url=button_url)
             ]])
         
-        from main import bot
-        
         for user in users:
             try:
                 if photo_file_id:
@@ -67,7 +72,7 @@ class BroadcastService:
                         photo=photo_file_id,
                         caption=message_text,
                         reply_markup=keyboard,
-                        parse_mode="Markdown"
+                        parse_mode="HTML"
                     )
                 elif video_file_id:
                     await bot.send_video(
@@ -75,18 +80,18 @@ class BroadcastService:
                         video=video_file_id,
                         caption=message_text,
                         reply_markup=keyboard,
-                        parse_mode="Markdown"
+                        parse_mode="HTML"
                     )
                 else:
                     await bot.send_message(
                         chat_id=user.id,
-                        text=message_text,
+                        text=message_text or "📢 Test message",
                         reply_markup=keyboard,
-                        parse_mode="Markdown"
+                        parse_mode="HTML"
                     )
                 
                 success_count += 1
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(0.05)
                 
             except Exception as e:
                 failed_count += 1
@@ -97,10 +102,9 @@ class BroadcastService:
         broadcast_record.failed_count = failed_count
         broadcast_record.status = "completed"
         broadcast_record.sent_at = datetime.utcnow()
+        broadcast_record.completed_at = datetime.utcnow()
         
         await self.db.commit()
-        
-        metrics.record_message("broadcast")
         
         return success_count
     
@@ -108,7 +112,8 @@ class BroadcastService:
         self,
         admin_id: int,
         message_text: str,
-        user_filter: dict
+        user_filter: dict,
+        bot=None
     ) -> int:
         user_service = UserService(self.db)
         
@@ -122,7 +127,8 @@ class BroadcastService:
         return await self.send_advanced_broadcast(
             admin_id=admin_id,
             message_text=message_text,
-            target_users=[user.id for user in users]
+            target_users=[user.id for user in users],
+            bot=bot
         )
     
     async def _get_users_by_language(self, language: str) -> list:
@@ -132,7 +138,8 @@ class BroadcastService:
         result = await self.db.execute(
             select(User).where(
                 User.language_code == language,
-                User.is_active == True
+                User.is_active == True,
+                User.is_banned == False
             )
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
