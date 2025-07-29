@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Contest Bot{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-tachometer-alt"></i> Admin Dashboard</h1>
+    <span class="badge bg-success">Welcome, {{ admin.username }}</span>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4>{{ stats.total_users }}</h4>
+                        <p>Total Users</p>
+                    </div>
+                    <i class="fas fa-users fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4>{{ stats.active_contests }}</h4>
+                        <p>Active Contests</p>
+                    </div>
+                    <i class="fas fa-trophy fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4>{{ stats.total_contests }}</h4>
+                        <p>Total Contests</p>
+                    </div>
+                    <i class="fas fa-list fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4>{{ stats.total_participants }}</h4>
+                        <p>Participants</p>
+                    </div>
+                    <i class="fas fa-user-friends fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-bullhorn"></i> Broadcast Message</h5>
+            </div>
+            <div class="card-body">
+                <form id="broadcastForm">
+                    <div class="mb-3">
+                        <textarea class="form-control" id="message" rows="4" placeholder="Enter your message..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Broadcast</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="/admin/users" class="btn btn-outline-primary">
+                        <i class="fas fa-users"></i> Manage Users
+                    </a>
+                    <a href="/admin/contests" class="btn btn-outline-success">
+                        <i class="fas fa-trophy"></i> Manage Contests
+                    </a>
+                    <button class="btn btn-outline-info" onclick="refreshStats()">
+                        <i class="fas fa-sync"></i> Refresh Stats
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('broadcastForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const message = document.getElementById('message').value;
+    const formData = new FormData();
+    formData.append('message', message);
+    
+    fetch('/admin/broadcast', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Message sent to ${data.sent_count} users!`);
+            document.getElementById('message').value = '';
+        } else {
+            alert('Failed to send message');
+        }
+    });
+});
+
+function refreshStats() {
+    location.reload();
+}
+</script>
+{% endblock %}

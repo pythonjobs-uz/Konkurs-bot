@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - Contest Bot{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <h1>Terms of Service</h1>
+        <p class="text-muted">Last updated: {{ "now"|strftime("%B %d, %Y") }}</p>
+
+        <h3>1. Acceptance of Terms</h3>
+        <p>By using Contest Bot, you agree to these Terms of Service. If you don't agree, please don't use our service.</p>
+
+        <h3>2. Service Description</h3>
+        <p>Contest Bot allows users to create and participate in contests through Telegram. We provide the platform but don't guarantee specific outcomes.</p>
+
+        <h3>3. User Responsibilities</h3>
+        <ul>
+            <li>Provide accurate information</li>
+            <li>Don't create fraudulent contests</li>
+            <li>Respect other users</li>
+            <li>Follow Telegram's Terms of Service</li>
+        </ul>
+
+        <h3>4. Contest Rules</h3>
+        <ul>
+            <li>Contest creators are responsible for prize fulfillment</li>
+            <li>Winners are selected randomly by our system</li>
+            <li>Disputes should be resolved between contest creators and participants</li>
+        </ul>
+
+        <h3>5. Prohibited Activities</h3>
+        <ul>
+            <li>Creating fake contests</li>
+            <li>Using multiple accounts to participate</li>
+            <li>Harassment or spam</li>
+            <li>Illegal activities</li>
+        </ul>
+
+        <h3>6. Privacy</h3>
+        <p>We collect minimal data necessary for service operation. See our Privacy Policy for details.</p>
+
+        <h3>7. Limitation of Liability</h3>
+        <p>We're not responsible for contest outcomes, prize delivery, or disputes between users.</p>
+
+        <h3>8. Changes to Terms</h3>
+        <p>We may update these terms. Continued use means acceptance of new terms.</p>
+
+        <h3>9. Contact</h3>
+        <p>Questions? Contact us at support@contestbot.com</p>
+    </div>
+</div>
+{% endblock %}

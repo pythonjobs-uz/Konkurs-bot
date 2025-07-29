@@ -79,9 +79,10 @@ class User(Base):
     created_at = Column(DateTime, default=func.now(), index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
-    contests = relationship("Contest", back_populates="owner", lazy="dynamic")
-    participations = relationship("Participant", back_populates="user", lazy="dynamic")
-    analytics = relationship("UserAnalytics", back_populates="user", lazy="dynamic")
+    # Fixed relationships with explicit foreign_keys
+    contests = relationship("Contest", back_populates="owner", foreign_keys="Contest.owner_id")
+    participations = relationship("Participant", back_populates="user", foreign_keys="Participant.user_id")
+    analytics = relationship("UserAnalytics", back_populates="user", foreign_keys="UserAnalytics.user_id")
 
 class Channel(Base):
     __tablename__ = "channels"
@@ -138,8 +139,10 @@ class Participant(Base):
     referrer_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     is_winner = Column(Boolean, default=False, index=True)
     
+    # Fixed relationships with explicit foreign_keys
     contest = relationship("Contest", back_populates="participants")
-    user = relationship("User", back_populates="participations")
+    user = relationship("User", back_populates="participations", foreign_keys=[user_id])
+    referrer = relationship("User", foreign_keys=[referrer_id])
     
     __table_args__ = (
         Index('idx_contest_user', 'contest_id', 'user_id', unique=True),
@@ -158,7 +161,7 @@ class Winner(Base):
     announced_at = Column(DateTime, default=func.now())
     
     contest = relationship("Contest", back_populates="winners")
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
     
     __table_args__ = (
         Index('idx_contest_position', 'contest_id', 'position', unique=True),

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto text-center">
+        <h1 class="display-4 mb-4"><i class="fas fa-trophy text-warning"></i> Contest Bot</h1>
+        <p class="lead mb-4">Create and participate in exciting contests with ease!</p>
+        
+        <div class="row g-4 mt-4">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-plus-circle fa-3x text-primary mb-3"></i>
+                        <h5>Create Contests</h5>
+                        <p>Set up your own contests with custom rules and prizes</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-users fa-3x text-success mb-3"></i>
+                        <h5>Join Contests</h5>
+                        <p>Participate in contests created by other users</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-crown fa-3x text-warning mb-3"></i>
+                        <h5>Win Prizes</h5>
+                        <p>Get a chance to win amazing prizes and rewards</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-5">
+            <a href="https://t.me/your_bot_username" class="btn btn-primary btn-lg">
+                <i class="fab fa-telegram"></i> Start Bot
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

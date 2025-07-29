@@ -1,133 +1,173 @@
-import asyncio
-import logging
-import sys
-from contextlib import asynccontextmanager
-
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.storage.redis import RedisStorage
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException, Depends, Form, File, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlalchemy.orm import Session
+from contextlib import asynccontextmanager
+import uvicorn
+import asyncio
+from datetime import datetime, timedelta
+import secrets
+import hashlib
+import hmac
+import json
 
-from app.core.config import settings
-from app.core.database import init_db, close_db
-from app.core.redis import init_redis, close_redis, redis_manager
-from app.middlewares.database import DatabaseMiddleware
-from app.middlewares.i18n import I18nMiddleware
-from app.middlewares.throttling import ThrottlingMiddleware
-from app.middlewares.analytics import AnalyticsMiddleware
-from app.handlers import start, menu, contest, admin
-from app.api.routes import router as api_router
-from app.services.scheduler import scheduler, scheduler_service
+from db import get_db, init_db
+from models import User, Contest, Participant, Winner, Admin
+from bot import TelegramBot
+from config import settings
+from utils import verify_telegram_data, generate_token, hash_password, verify_password
 
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('bot.log')
-    ]
-)
-
-logger = logging.getLogger(__name__)
+bot = TelegramBot(settings.BOT_TOKEN)
+security = HTTPBasic()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Konkurs Bot...")
-    
+    await init_db()
+    await bot.set_webhook(f"{settings.WEBHOOK_URL}/webhook/{settings.BOT_TOKEN}")
+    yield
+    await bot.delete_webhook()
+
+app = FastAPI(title="Contest Bot", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security), db: Session = Depends(get_db)):
+    admin = db.query(Admin).filter(Admin.username == credentials.username).first()
+    if not admin or not verify_password(credentials.password, admin.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return admin
+
+@app.post(f"/webhook/{settings.BOT_TOKEN}")
+async def webhook(request: Request, db: Session = Depends(get_db)):
     try:
-        await init_redis()
-        await init_db()
-        
-        bot = Bot(
-            token=settings.BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-        )
-        
-        storage = RedisStorage(redis_manager.redis) if redis_manager.redis else MemoryStorage()
-        dp = Dispatcher(storage=storage)
-        
-        dp.middleware(DatabaseMiddleware())
-        dp.middleware(I18nMiddleware())
-        dp.middleware(ThrottlingMiddleware())
-        dp.middleware(AnalyticsMiddleware())
-        
-        dp.include_router(start.router)
-        dp.include_router(menu.router)
-        dp.include_router(contest.router)
-        dp.include_router(admin.router)
-        
-        app.state.bot = bot
-        app.state.dp = dp
-        
-        scheduler_service.set_bot(bot)
-        
-        if settings.USE_WEBHOOK and settings.WEBHOOK_URL:
-            await bot.set_webhook(
-                url=f"{settings.WEBHOOK_URL}/webhook",
-                secret_token=settings.WEBHOOK_SECRET
-            )
-            logger.info(f"Webhook set to {settings.WEBHOOK_URL}/webhook")
-        else:
-            asyncio.create_task(start_polling(dp, bot))
-            logger.info("Started polling mode")
-        
-        scheduler.start()
-        logger.info("Scheduler started")
-        
-        yield
-        
+        data = await request.json()
+        await bot.process_update(data, db)
+        return {"ok": True}
     except Exception as e:
-        logger.error(f"Startup failed: {e}")
-        raise
-    finally:
-        logger.info("Shutting down...")
-        
-        if hasattr(app.state, 'bot'):
-            await app.state.bot.session.close()
-        
-        scheduler.shutdown()
-        await close_redis()
-        await close_db()
-        
-        logger.info("Shutdown complete")
+        return {"ok": False, "error": str(e)}
 
-async def start_polling(dp: Dispatcher, bot: Bot):
-    try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    except Exception as e:
-        logger.error(f"Polling error: {e}")
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("home.html", {"request": request})
 
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title="Konkurs Bot API",
-        description="Telegram Contest Bot API",
-        version="2.0.0",
-        lifespan=lifespan
-    )
-    
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    app.include_router(api_router, prefix="/api")
-    
-    return app
+@app.get("/terms", response_class=HTMLResponse)
+async def terms(request: Request):
+    return templates.TemplateResponse("terms.html", {"request": request})
 
-app = create_app()
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy(request: Request):
+    return templates.TemplateResponse("privacy.html", {"request": request})
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_login(request: Request):
+    return templates.TemplateResponse("admin_login.html", {"request": request})
+
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, admin: Admin = Depends(verify_admin), db: Session = Depends(get_db)):
+    stats = {
+        "total_users": db.query(User).count(),
+        "active_contests": db.query(Contest).filter(Contest.status == "active").count(),
+        "total_contests": db.query(Contest).count(),
+        "total_participants": db.query(Participant).count()
+    }
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request, 
+        "stats": stats,
+        "admin": admin
+    })
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users(request: Request, admin: Admin = Depends(verify_admin), db: Session = Depends(get_db)):
+    users = db.query(User).order_by(User.created_at.desc()).limit(100).all()
+    return templates.TemplateResponse("admin_users.html", {
+        "request": request,
+        "users": users,
+        "admin": admin
+    })
+
+@app.get("/admin/contests", response_class=HTMLResponse)
+async def admin_contests(request: Request, admin: Admin = Depends(verify_admin), db: Session = Depends(get_db)):
+    contests = db.query(Contest).order_by(Contest.created_at.desc()).limit(100).all()
+    return templates.TemplateResponse("admin_contests.html", {
+        "request": request,
+        "contests": contests,
+        "admin": admin
+    })
+
+@app.post("/admin/broadcast")
+async def admin_broadcast(
+    message: str = Form(...),
+    admin: Admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    users = db.query(User).filter(User.is_active == True).all()
+    success_count = 0
+    
+    for user in users:
+        try:
+            await bot.send_message(user.telegram_id, message)
+            success_count += 1
+            await asyncio.sleep(0.05)
+        except:
+            continue
+    
+    return {"success": True, "sent_count": success_count}
+
+@app.get("/user/{user_id}", response_class=HTMLResponse)
+async def user_profile(request: Request, user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.telegram_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    contests = db.query(Contest).filter(Contest.owner_id == user.id).all()
+    participations = db.query(Participant).filter(Participant.user_id == user.id).all()
+    
+    return templates.TemplateResponse("user_profile.html", {
+        "request": request,
+        "user": user,
+        "contests": contests,
+        "participations": participations
+    })
+
+@app.get("/contest/{contest_id}", response_class=HTMLResponse)
+async def contest_view(request: Request, contest_id: int, db: Session = Depends(get_db)):
+    contest = db.query(Contest).filter(Contest.id == contest_id).first()
+    if not contest:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    
+    participants = db.query(Participant).filter(Participant.contest_id == contest_id).all()
+    winners = db.query(Winner).filter(Winner.contest_id == contest_id).all()
+    
+    return templates.TemplateResponse("contest_view.html", {
+        "request": request,
+        "contest": contest,
+        "participants": participants,
+        "winners": winners
+    })
+
+@app.get("/api/stats")
+async def api_stats(db: Session = Depends(get_db)):
+    return {
+        "users": db.query(User).count(),
+        "contests": db.query(Contest).count(),
+        "active_contests": db.query(Contest).filter(Contest.status == "active").count(),
+        "participants": db.query(Participant).count()
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "timestamp": datetime.utcnow()}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.DEBUG,
-        log_level="info"
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
