@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Contest: {{ contest.title }} - Contest Bot{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-trophy"></i> {{ contest.title }}</h5>
+            </div>
+            <div class="card-body">
+                {% if contest.description %}
+                    <p>{{ contest.description }}</p>
+                {% endif %}
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Winners:</strong> {{ contest.winners_count }}</p>
+                        <p><strong>Status:</strong> 
+                            <span class="badge bg-{{ 'success' if contest.status == 'active' else 'secondary' }}">
+                                {{ contest.status.title() }}
+                            </span>
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Views:</strong> {{ contest.view_count }}</p>
+                        <p><strong>Created:</strong> {{ contest.created_at.strftime('%Y-%m-%d %H:%M') if contest.created_at else 'N/A' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% if winners %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-crown"></i> Winners</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Position</th>
+                                <th>User ID</th>
+                                <th>Announced</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for winner in winners %}
+                            <tr>
+                                <td>
+                                    {% if winner.position == 1 %}
+                                        🥇 1st
+                                    {% elif winner.position == 2 %}
+                                        🥈 2nd
+                                    {% elif winner.position == 3 %}
+                                        🥉 3rd
+                                    {% else %}
+                                        {{ winner.position }}th
+                                    {% endif %}
+                                </td>
+                                <td>{{ winner.user_id }}</td>
+                                <td>{{ winner.announced_at.strftime('%Y-%m-%d %H:%M') if winner.announced_at else 'N/A' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Participants ({{ participants|length }})</h5>
+            </div>
+            <div class="card-body">
+                {% if participants %}
+                    <div class="list-group list-group-flush">
+                        {% for participant in participants[:10] %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            User {{ participant.user_id }}
+                            {% if participant.is_winner %}
+                                <span class="badge bg-warning">Winner</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        {% if participants|length > 10 %}
+                        <div class="list-group-item text-center text-muted">
+                            ... and {{ participants|length - 10 }} more
+                        </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No participants yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,9 +1,8 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    BOT_TOKEN: str
-    DATABASE_URL: str = "sqlite:///./contest_bot.db"
-    WEBHOOK_URL: str
+    BOT_TOKEN: str = "your_bot_token_here"
+    WEBHOOK_URL: str = "https://your-domain.com"
     SECRET_KEY: str = "your-secret-key-here"
     
     class Config:
