@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import List, Optional
 import secrets
-import os
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
@@ -10,18 +9,20 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./konkurs_bot.db"
     REDIS_URL: str = "redis://localhost:6379"
     
-    ADMIN_IDS: List[int] = []
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "admin123"
     SUPER_ADMIN_ID: Optional[int] = None
+    ADMIN_IDS: List[int] = []
     
     SPONSOR_CHANNEL_ID: Optional[int] = None
     SPONSOR_CHANNEL_USERNAME: Optional[str] = None
     
-    WELCOME_IMAGE_URL: str = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-DqoVaYibRQZcQAktSp0nc65x4QKQLs.png"
-    SPONSOR_IMAGE_URL: str = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-DD29J2aQr5RSmcKRitFxTbpXr9sLvg.png"
-    
     USE_WEBHOOK: bool = False
     WEBHOOK_URL: Optional[str] = None
     WEBHOOK_SECRET: str = secrets.token_urlsafe(32)
+    
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    ENCRYPTION_KEY: str = secrets.token_urlsafe(32)
     
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
@@ -33,16 +34,9 @@ class Settings(BaseSettings):
     MAX_WINNERS_COUNT: int = 100
     MAX_PARTICIPANTS: int = 10000
     
-    ANALYTICS_RETENTION_DAYS: int = 90
-    ENCRYPTION_KEY: str = secrets.token_urlsafe(32)
-    
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
-    DB_POOL_TIMEOUT: int = 30
-    DB_POOL_RECYCLE: int = 3600
-    
     REDIS_POOL_SIZE: int = 10
-    REDIS_TIMEOUT: int = 5
     
     @property
     def is_sqlite(self) -> bool:
@@ -57,3 +51,6 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 settings = Settings()
+
+if settings.SUPER_ADMIN_ID and settings.SUPER_ADMIN_ID not in settings.ADMIN_IDS:
+    settings.ADMIN_IDS.append(settings.SUPER_ADMIN_ID)

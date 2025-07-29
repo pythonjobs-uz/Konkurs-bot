@@ -1,31 +1,29 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc, or_
-from sqlalchemy.orm import selectinload
-from datetime import datetime
-from typing import Optional, List
-
-from app.core.database import Contest, Participant, User, Channel
+import random
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+from app.core.database import db
 from app.core.redis import cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ContestService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-    
+    @staticmethod
     async def create_contest(
-        self,
         owner_id: int,
         channel_id: int,
         title: str,
         description: str,
-        image_file_id: Optional[str] = None,
+        image_file_id: str = None,
         participate_button_text: str = "🤝 Qatnashish",
         winners_count: int = 1,
-        start_time: datetime = None,
-        end_time: Optional[datetime] = None,
-        max_participants: Optional[int] = None,
-        prize_description: Optional[str] = None
-    ) -> Contest:
-        contest = Contest(
+        start_time: str = None,
+        end_time: str = None,
+        max_participants: int = None,
+        prize_description: str = None,
+        requirements: str = None
+    ) -> int:
+        contest_id = await db.create_contest(
             owner_id=owner_id,
             channel_id=channel_id,
             title=title,
@@ -33,194 +31,123 @@ class ContestService:
             image_file_id=image_file_id,
             participate_button_text=participate_button_text,
             winners_count=winners_count,
-            start_time=start_time or datetime.utcnow(),
+            start_time=start_time,
             end_time=end_time,
             max_participants=max_participants,
-            prize_description=prize_description
+            prize_description=prize_description,
+            requirements=requirements
         )
         
-        self.db.add(contest)
-        await self.db.commit()
-        await self.db.refresh(contest)
-        
-        await cache.delete("contest_statistics")
+        await cache.delete(f"user_contests:{owner_id}")
         await cache.delete("active_contests")
         
-        return contest
+        return contest_id
     
-    async def get_contest(self, contest_id: int) -> Optional[Contest]:
+    @staticmethod
+    async def get_contest_with_cache(contest_id: int) -> Optional[Dict[str, Any]]:
         cache_key = f"contest:{contest_id}"
-        cached_contest = await cache.get(cache_key)
+        contest = await cache.get(cache_key)
         
-        if cached_contest:
-            return cached_contest
-        
-        result = await self.db.execute(
-            select(Contest)
-            .options(
-                selectinload(Contest.owner),
-                selectinload(Contest.channel)
-            )
-            .where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            await cache.set(cache_key, contest, 1800)
+        if not contest:
+            contest = await db.get_contest(contest_id)
+            if contest:
+                await cache.set(cache_key, contest, expire=300)
         
         return contest
     
-    async def get_user_contests(self, user_id: int, limit: int = 50, offset: int = 0) -> List[Contest]:
-        result = await self.db.execute(
-            select(Contest)
-            .where(Contest.owner_id == user_id)
-            .order_by(desc(Contest.created_at))
-            .limit(limit)
-            .offset(offset)
-        )
-        return list(result.scalars().all())
+    @staticmethod
+    async def join_contest(contest_id: int, user_id: int, referral_source: str = None) -> bool:
+        contest = await ContestService.get_contest_with_cache(contest_id)
+        
+        if not contest or contest['status'] != 'active':
+            return False
+        
+        if contest['max_participants']:
+            current_participants = await db.get_participants_count(contest_id)
+            if current_participants >= contest['max_participants']:
+                return False
+        
+        is_already_participating = await db.is_participating(contest_id, user_id)
+        if is_already_participating:
+            return False
+        
+        success = await db.add_participant(contest_id, user_id, referral_source)
+        
+        if success:
+            await cache.delete(f"contest:{contest_id}")
+            await cache.delete(f"contest_participants:{contest_id}")
+        
+        return success
     
-    async def get_user_contests_count(self, user_id: int) -> int:
-        result = await self.db.execute(
-            select(func.count(Contest.id)).where(Contest.owner_id == user_id)
-        )
-        return result.scalar() or 0
+    @staticmethod
+    async def select_winners(contest_id: int) -> List[Dict[str, Any]]:
+        contest = await db.get_contest(contest_id)
+        if not contest:
+            return []
+        
+        participants = await db.get_contest_participants(contest_id)
+        if not participants:
+            return []
+        
+        winners_count = min(contest['winners_count'], len(participants))
+        selected_winners = random.sample(participants, winners_count)
+        
+        for i, winner in enumerate(selected_winners, 1):
+            await db.create_winner(contest_id, winner['id'], i)
+        
+        await cache.delete(f"contest:{contest_id}")
+        await cache.delete(f"contest_winners:{contest_id}")
+        
+        return selected_winners
     
-    async def get_active_contests(self) -> List[Contest]:
-        cache_key = "active_contests"
-        cached_contests = await cache.get(cache_key)
+    @staticmethod
+    async def get_contest_statistics(contest_id: int) -> Dict[str, Any]:
+        cache_key = f"contest_stats:{contest_id}"
+        stats = await cache.get(cache_key)
         
-        if cached_contests:
-            return cached_contests
+        if not stats:
+            contest = await db.get_contest(contest_id)
+            if not contest:
+                return {}
+            
+            participants_count = await db.get_participants_count(contest_id)
+            winners = await db.get_contest_winners(contest_id)
+            
+            stats = {
+                "contest": contest,
+                "participants_count": participants_count,
+                "winners_count": len(winners),
+                "winners": winners,
+                "status": contest['status'],
+                "view_count": contest.get('view_count', 0)
+            }
+            
+            await cache.set(cache_key, stats, expire=60)
         
-        now = datetime.utcnow()
-        result = await self.db.execute(
-            select(Contest)
-            .where(
-                and_(
-                    Contest.status.in_(["pending", "active"]),
-                    Contest.start_time <= now
-                )
-            )
-        )
-        contests = list(result.scalars().all())
+        return stats
+    
+    @staticmethod
+    async def end_contest(contest_id: int) -> bool:
+        try:
+            await db.update_contest_status(contest_id, 'ended')
+            winners = await ContestService.select_winners(contest_id)
+            
+            await cache.delete(f"contest:{contest_id}")
+            await cache.delete("active_contests")
+            
+            return len(winners) > 0
+        except Exception as e:
+            logger.error(f"Error ending contest {contest_id}: {e}")
+            return False
+    
+    @staticmethod
+    async def get_trending_contests(limit: int = 10) -> List[Dict[str, Any]]:
+        cache_key = f"trending_contests:{limit}"
+        contests = await cache.get(cache_key)
         
-        await cache.set(cache_key, contests, 300)
+        if not contests:
+            contests = await db.get_active_contests()
+            contests = sorted(contests, key=lambda x: x.get('participant_count', 0), reverse=True)[:limit]
+            await cache.set(cache_key, contests, expire=300)
+        
         return contests
-    
-    async def get_contests_by_status(self, status: str, limit: int = 50) -> List[Contest]:
-        result = await self.db.execute(
-            select(Contest)
-            .where(Contest.status == status)
-            .order_by(desc(Contest.created_at))
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-    
-    async def get_recent_contests(self, limit: int = 50) -> List[Contest]:
-        result = await self.db.execute(
-            select(Contest)
-            .order_by(desc(Contest.created_at))
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-    
-    async def update_contest_status(self, contest_id: int, status: str):
-        result = await self.db.execute(
-            select(Contest).where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            contest.status = status
-            contest.updated_at = datetime.utcnow()
-            await self.db.commit()
-            
-            await cache.delete(f"contest:{contest_id}")
-            await cache.delete("active_contests")
-            await cache.delete("contest_statistics")
-    
-    async def set_contest_message_id(self, contest_id: int, message_id: int):
-        result = await self.db.execute(
-            select(Contest).where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            contest.message_id = message_id
-            await self.db.commit()
-            
-            await cache.delete(f"contest:{contest_id}")
-    
-    async def increment_view_count(self, contest_id: int):
-        result = await self.db.execute(
-            select(Contest).where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            contest.view_count += 1
-            await self.db.commit()
-            
-            await cache.delete(f"contest:{contest_id}")
-    
-    async def update_participant_count(self, contest_id: int):
-        participant_count = await self.db.execute(
-            select(func.count(Participant.id)).where(Participant.contest_id == contest_id)
-        )
-        count = participant_count.scalar() or 0
-        
-        result = await self.db.execute(
-            select(Contest).where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            contest.participant_count = count
-            await self.db.commit()
-            
-            await cache.delete(f"contest:{contest_id}")
-    
-    async def get_trending_contests(self, limit: int = 10) -> List[Contest]:
-        result = await self.db.execute(
-            select(Contest)
-            .where(Contest.status == "active")
-            .order_by(desc(Contest.view_count))
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-    
-    async def search_contests(self, query: str, limit: int = 20) -> List[Contest]:
-        search_pattern = f"%{query}%"
-        result = await self.db.execute(
-            select(Contest)
-            .where(
-                and_(
-                    Contest.status.in_(["active", "pending"]),
-                    or_(
-                        Contest.title.ilike(search_pattern),
-                        Contest.description.ilike(search_pattern)
-                    )
-                )
-            )
-            .order_by(desc(Contest.created_at))
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-    
-    async def delete_contest(self, contest_id: int) -> bool:
-        result = await self.db.execute(
-            select(Contest).where(Contest.id == contest_id)
-        )
-        contest = result.scalar_one_or_none()
-        
-        if contest:
-            await self.db.delete(contest)
-            await self.db.commit()
-            
-            await cache.delete(f"contest:{contest_id}")
-            await cache.delete("active_contests")
-            await cache.delete("contest_statistics")
-            return True
-        
-        return False

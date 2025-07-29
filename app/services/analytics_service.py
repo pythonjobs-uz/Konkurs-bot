@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 
 from app.core.database import User, Contest, Participant, UserAnalytics, ContestAnalytics
 from app.core.redis import cache
+import json
 
 class AnalyticsService:
     def __init__(self, db: AsyncSession):
@@ -193,92 +194,184 @@ class AnalyticsService:
         except Exception:
             return {}
     
-    async def get_system_analytics(self) -> Dict[str, Any]:
-        cache_key = "system_analytics"
-        cached_analytics = await cache.get(cache_key)
+    @staticmethod
+    async def get_system_analytics(days: int = 7) -> Dict[str, Any]:
+        cache_key = f"system_analytics:{days}"
+        analytics = await cache.get(cache_key)
         
-        if cached_analytics:
-            return cached_analytics
-        
-        try:
-            total_users = await self.db.execute(select(func.count(User.id)))
-            active_users = await self.db.execute(
-                select(func.count(User.id)).where(
-                    and_(User.is_active == True, User.is_banned == False)
-                )
-            )
-            premium_users = await self.db.execute(
-                select(func.count(User.id)).where(
-                    and_(User.is_active == True, User.is_premium == True, User.is_banned == False)
-                )
-            )
+        if not analytics:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
             
-            today = datetime.now().date()
-            new_today = await self.db.execute(
-                select(func.count(User.id)).where(
-                    func.date(User.created_at) == today
-                )
-            )
+            # User growth
+            cursor = await db.connection.execute("""
+                SELECT DATE(created_at) as date, COUNT(*) as count 
+                FROM users 
+                WHERE created_at >= ? AND created_at <= ?
+                GROUP BY DATE(created_at) 
+                ORDER BY date
+            """, (start_date.isoformat(), end_date.isoformat()))
+            user_growth = await cursor.fetchall()
             
-            total_contests = await self.db.execute(select(func.count(Contest.id)))
-            active_contests = await self.db.execute(
-                select(func.count(Contest.id)).where(Contest.status == "active")
-            )
-            ended_contests = await self.db.execute(
-                select(func.count(Contest.id)).where(Contest.status == "ended")
-            )
+            # Contest creation stats
+            cursor = await db.connection.execute("""
+                SELECT DATE(created_at) as date, COUNT(*) as count 
+                FROM contests 
+                WHERE created_at >= ? AND created_at <= ?
+                GROUP BY DATE(created_at) 
+                ORDER BY date
+            """, (start_date.isoformat(), end_date.isoformat()))
+            contest_creation = await cursor.fetchall()
             
-            messages_today = await self.db.execute(
-                select(func.count(UserAnalytics.id)).where(
-                    func.date(UserAnalytics.timestamp) == today
-                )
-            )
+            # Participation stats
+            cursor = await db.connection.execute("""
+                SELECT DATE(joined_at) as date, COUNT(*) as count 
+                FROM participants 
+                WHERE joined_at >= ? AND joined_at <= ?
+                GROUP BY DATE(joined_at) 
+                ORDER BY date
+            """, (start_date.isoformat(), end_date.isoformat()))
+            participation_stats = await cursor.fetchall()
             
-            week_ago = datetime.now() - timedelta(days=7)
-            users_week_ago = await self.db.execute(
-                select(func.count(User.id)).where(User.created_at <= week_ago)
-            )
+            # Top channels by contests
+            cursor = await db.connection.execute("""
+                SELECT c.title, COUNT(co.id) as contest_count, SUM(co.participant_count) as total_participants
+                FROM channels c
+                LEFT JOIN contests co ON c.channel_id = co.channel_id
+                WHERE co.created_at >= ? AND co.created_at <= ?
+                GROUP BY c.id
+                ORDER BY contest_count DESC
+                LIMIT 10
+            """, (start_date.isoformat(), end_date.isoformat()))
+            top_channels = await cursor.fetchall()
             
-            weekly_growth = 0
-            users_week_ago_count = users_week_ago.scalar() or 0
-            if users_week_ago_count > 0:
-                weekly_growth = ((total_users.scalar() - users_week_ago_count) / users_week_ago_count) * 100
+            # Most active users
+            cursor = await db.connection.execute("""
+                SELECT u.first_name, u.username, COUNT(c.id) as contest_count
+                FROM users u
+                LEFT JOIN contests c ON u.id = c.owner_id
+                WHERE c.created_at >= ? AND c.created_at <= ?
+                GROUP BY u.id
+                ORDER BY contest_count DESC
+                LIMIT 10
+            """, (start_date.isoformat(), end_date.isoformat()))
+            active_users = await cursor.fetchall()
             
             analytics = {
-                "total_users": total_users.scalar() or 0,
-                "active_users": active_users.scalar() or 0,
-                "premium_users": premium_users.scalar() or 0,
-                "new_today": new_today.scalar() or 0,
-                "total_contests": total_contests.scalar() or 0,
-                "active_contests": active_contests.scalar() or 0,
-                "ended_contests": ended_contests.scalar() or 0,
-                "messages_today": messages_today.scalar() or 0,
-                "weekly_growth": weekly_growth,
-                "top_channel": "N/A",
-                "db_size": 0,
-                "redis_memory": 0,
-                "uptime": 24
+                "user_growth": [{"date": row[0], "count": row[1]} for row in user_growth],
+                "contest_creation": [{"date": row[0], "count": row[1]} for row in contest_creation],
+                "participation_stats": [{"date": row[0], "count": row[1]} for row in participation_stats],
+                "top_channels": [{"title": row[0], "contests": row[1], "participants": row[2]} for row in top_channels],
+                "active_users": [{"name": row[0], "username": row[1], "contests": row[2]} for row in active_users]
             }
             
-            await cache.set(cache_key, analytics, 600)
-            return analytics
+            await cache.set(cache_key, analytics, expire=3600)
         
-        except Exception:
-            return {
-                "total_users": 0,
-                "active_users": 0,
-                "premium_users": 0,
-                "new_today": 0,
-                "total_contests": 0,
-                "active_contests": 0,
-                "ended_contests": 0,
-                "messages_today": 0,
-                "weekly_growth": 0,
-                "top_channel": "N/A",
-                "db_size": 0,
-                "redis_memory": 0,
-                "uptime": 0
+        return analytics
+    
+    @staticmethod
+    async def get_contest_analytics(contest_id: int) -> Dict[str, Any]:
+        cache_key = f"contest_analytics:{contest_id}"
+        analytics = await cache.get(cache_key)
+        
+        if not analytics:
+            contest = await db.get_contest(contest_id)
+            if not contest:
+                return {}
+            
+            # Participation timeline
+            cursor = await db.connection.execute("""
+                SELECT DATE(joined_at) as date, COUNT(*) as count 
+                FROM participants 
+                WHERE contest_id = ?
+                GROUP BY DATE(joined_at) 
+                ORDER BY date
+            """, (contest_id,))
+            participation_timeline = await cursor.fetchall()
+            
+            # Hourly participation
+            cursor = await db.connection.execute("""
+                SELECT strftime('%H', joined_at) as hour, COUNT(*) as count 
+                FROM participants 
+                WHERE contest_id = ?
+                GROUP BY strftime('%H', joined_at) 
+                ORDER BY hour
+            """, (contest_id,))
+            hourly_participation = await cursor.fetchall()
+            
+            # Referral sources
+            cursor = await db.connection.execute("""
+                SELECT referral_source, COUNT(*) as count 
+                FROM participants 
+                WHERE contest_id = ? AND referral_source IS NOT NULL
+                GROUP BY referral_source 
+                ORDER BY count DESC
+            """, (contest_id,))
+            referral_sources = await cursor.fetchall()
+            
+            analytics = {
+                "contest": contest,
+                "participation_timeline": [{"date": row[0], "count": row[1]} for row in participation_timeline],
+                "hourly_participation": [{"hour": row[0], "count": row[1]} for row in hourly_participation],
+                "referral_sources": [{"source": row[0], "count": row[1]} for row in referral_sources]
             }
+            
+            await cache.set(cache_key, analytics, expire=1800)
+        
+        return analytics
+    
+    @staticmethod
+    async def get_user_engagement_metrics() -> Dict[str, Any]:
+        cache_key = "user_engagement_metrics"
+        metrics = await cache.get(cache_key)
+        
+        if not metrics:
+            # Daily active users
+            cursor = await db.connection.execute("""
+                SELECT COUNT(DISTINCT user_id) 
+                FROM analytics 
+                WHERE created_at >= datetime('now', '-1 day')
+            """)
+            daily_active = (await cursor.fetchone())[0]
+            
+            # Weekly active users
+            cursor = await db.connection.execute("""
+                SELECT COUNT(DISTINCT user_id) 
+                FROM analytics 
+                WHERE created_at >= datetime('now', '-7 days')
+            """)
+            weekly_active = (await cursor.fetchone())[0]
+            
+            # Monthly active users
+            cursor = await db.connection.execute("""
+                SELECT COUNT(DISTINCT user_id) 
+                FROM analytics 
+                WHERE created_at >= datetime('now', '-30 days')
+            """)
+            monthly_active = (await cursor.fetchone())[0]
+            
+            # Average session duration (approximated)
+            cursor = await db.connection.execute("""
+                SELECT AVG(session_count) as avg_actions_per_session
+                FROM (
+                    SELECT user_id, COUNT(*) as session_count
+                    FROM analytics 
+                    WHERE created_at >= datetime('now', '-7 days')
+                    GROUP BY user_id, DATE(created_at)
+                ) sessions
+            """)
+            avg_session_actions = (await cursor.fetchone())[0] or 0
+            
+            metrics = {
+                "daily_active_users": daily_active,
+                "weekly_active_users": weekly_active,
+                "monthly_active_users": monthly_active,
+                "avg_session_actions": round(avg_session_actions, 2)
+            }
+            
+            await cache.set(cache_key, metrics, expire=1800)
+        
+        return metrics
     
     async def get_popular_contests(self, limit: int = 10) -> List[Contest]:
         try:

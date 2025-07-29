@@ -1,53 +1,112 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - Konkurs Bot v3.0</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark gradient-bg">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">
+                <i class="fas fa-trophy text-warning"></i> Konkurs Bot v3.0
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">Home</a>
+                <a class="nav-link active" href="/terms">Terms</a>
+                <a class="nav-link" href="/privacy">Privacy</a>
+            </div>
+        </div>
+    </nav>
 
-{% block title %}Terms of Service - Contest Bot{% endblock %}
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body p-5">
+                        <h1 class="display-5 fw-bold mb-4">Terms of Service</h1>
+                        <p class="text-muted mb-4">Last updated: December 2024</p>
 
-{% block content %}
-<div class="row">
-    <div class="col-lg-8 mx-auto">
-        <h1>Terms of Service</h1>
-        <p class="text-muted">Last updated: December 2024</p>
+                        <h3 class="h4 fw-bold mb-3">1. Acceptance of Terms</h3>
+                        <p class="mb-4">By using Konkurs Bot v3.0, you agree to these Terms of Service and all applicable laws and regulations.</p>
 
-        <h3>1. Acceptance of Terms</h3>
-        <p>By using Contest Bot, you agree to these Terms of Service. If you don't agree, please don't use our service.</p>
+                        <h3 class="h4 fw-bold mb-3">2. Service Description</h3>
+                        <p class="mb-4">Konkurs Bot allows users to create and participate in contests through Telegram. Our service includes contest management, analytics, and premium features.</p>
 
-        <h3>2. Service Description</h3>
-        <p>Contest Bot allows users to create and participate in contests through Telegram. We provide the platform but don't guarantee specific outcomes.</p>
+                        <h3 class="h4 fw-bold mb-3">3. User Responsibilities</h3>
+                        <ul class="mb-4">
+                            <li>Provide accurate and truthful information</li>
+                            <li>Do not create fraudulent or misleading contests</li>
+                            <li>Respect other users and maintain appropriate conduct</li>
+                            <li>Follow Telegram's Terms of Service</li>
+                            <li>Do not use the service for illegal activities</li>
+                            <li>Respect intellectual property rights</li>
+                        </ul>
 
-        <h3>3. User Responsibilities</h3>
-        <ul>
-            <li>Provide accurate information</li>
-            <li>Don't create fraudulent contests</li>
-            <li>Respect other users</li>
-            <li>Follow Telegram's Terms of Service</li>
-        </ul>
+                        <h3 class="h4 fw-bold mb-3">4. Contest Rules</h3>
+                        <ul class="mb-4">
+                            <li>Contest creators are responsible for prize fulfillment</li>
+                            <li>Winners are selected randomly by our automated system</li>
+                            <li>Disputes should be resolved between contest creators and participants</li>
+                            <li>We reserve the right to remove inappropriate contests</li>
+                            <li>Contest creators must clearly state contest rules and prizes</li>
+                        </ul>
 
-        <h3>4. Contest Rules</h3>
-        <ul>
-            <li>Contest creators are responsible for prize fulfillment</li>
-            <li>Winners are selected randomly by our system</li>
-            <li>Disputes should be resolved between contest creators and participants</li>
-        </ul>
+                        <h3 class="h4 fw-bold mb-3">5. Premium Services</h3>
+                        <ul class="mb-4">
+                            <li>Premium subscriptions are billed monthly</li>
+                            <li>Refunds are available within 7 days of purchase</li>
+                            <li>Premium features are subject to fair use policy</li>
+                            <li>We may modify premium features with notice</li>
+                        </ul>
 
-        <h3>5. Prohibited Activities</h3>
-        <ul>
-            <li>Creating fake contests</li>
-            <li>Using multiple accounts to participate</li>
-            <li>Harassment or spam</li>
-            <li>Illegal activities</li>
-        </ul>
+                        <h3 class="h4 fw-bold mb-3">6. Data and Privacy</h3>
+                        <ul class="mb-4">
+                            <li>We collect and process data as described in our Privacy Policy</li>
+                            <li>User data is protected and not sold to third parties</li>
+                            <li>Analytics data is anonymized and aggregated</li>
+                        </ul>
 
-        <h3>6. Privacy</h3>
-        <p>We collect minimal data necessary for service operation. See our Privacy Policy for details.</p>
+                        <h3 class="h4 fw-bold mb-3">7. Prohibited Activities</h3>
+                        <ul class="mb-4">
+                            <li>Creating fake accounts or contests</li>
+                            <li>Attempting to manipulate contest results</li>
+                            <li>Spamming or harassment of other users</li>
+                            <li>Violating any applicable laws or regulations</li>
+                        </ul>
 
-        <h3>7. Limitation of Liability</h3>
-        <p>We're not responsible for contest outcomes, prize delivery, or disputes between users.</p>
+                        <h3 class="h4 fw-bold mb-3">8. Limitation of Liability</h3>
+                        <p class="mb-4">Konkurs Bot is provided "as is" without warranties. We are not liable for any damages arising from use of our service.</p>
 
-        <h3>8. Changes to Terms</h3>
-        <p>We may update these terms. Continued use means acceptance of new terms.</p>
+                        <h3 class="h4 fw-bold mb-3">9. Changes to Terms</h3>
+                        <p class="mb-4">We may update these terms at any time. Continued use of the service constitutes acceptance of new terms.</p>
 
-        <h3>9. Contact</h3>
-        <p>Questions? Contact us at support@contestbot.com</p>
+                        <h3 class="h4 fw-bold mb-3">10. Contact Information</h3>
+                        <div class="alert alert-info">
+                            <h6 class="fw-bold mb-2">Questions about these terms?</h6>
+                            <p class="mb-2"><i class="fas fa-envelope"></i> Email: legal@konkursbot.uz</p>
+                            <p class="mb-2"><i class="fab fa-telegram"></i> Telegram: @konkurs_support</p>
+                            <p class="mb-0"><i class="fas fa-phone"></i> Phone: +998 90 123 45 67</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
-{% endblock %}
+
+    <footer class="bg-dark text-light py-4">
+        <div class="container text-center">
+            <p class="mb-0">&copy; 2024 Konkurs Bot v3.0. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

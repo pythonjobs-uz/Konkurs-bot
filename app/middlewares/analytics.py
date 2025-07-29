@@ -1,13 +1,7 @@
-from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message, CallbackQuery
-from sqlalchemy.ext.asyncio import AsyncSession
-import json
-import logging
-
-from app.core.database import UserAnalytics
-
-logger = logging.getLogger(__name__)
+from aiogram.types import TelegramObject, Update
+from typing import Callable, Dict, Any, Awaitable
+from app.core.database import db
 
 class AnalyticsMiddleware(BaseMiddleware):
     async def __call__(
@@ -16,61 +10,22 @@ class AnalyticsMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        result = await handler(event, data)
+        if isinstance(event, Update):
+            user_id = None
+            action = "unknown"
+            
+            if event.message:
+                user_id = event.message.from_user.id
+                action = f"message:{event.message.text[:20] if event.message.text else 'media'}"
+            elif event.callback_query:
+                user_id = event.callback_query.from_user.id
+                action = f"callback:{event.callback_query.data}"
+            
+            if user_id:
+                await db.log_analytics(
+                    user_id=user_id,
+                    action=action,
+                    data=str(event.model_dump())[:500]
+                )
         
-        try:
-            await self.log_event(event, data)
-        except Exception as e:
-            logger.error(f"Analytics logging error: {e}")
-        
-        return result
-    
-    async def log_event(self, event: TelegramObject, data: Dict[str, Any]):
-        if not isinstance(event, (Message, CallbackQuery)):
-            return
-        
-        user_id = event.from_user.id if event.from_user else None
-        if not user_id:
-            return
-        
-        db: AsyncSession = data.get("db")
-        if not db:
-            return
-        
-        action = self.get_action_name(event)
-        event_data = self.extract_event_data(event)
-        
-        analytics = UserAnalytics(
-            user_id=user_id,
-            action=action,
-            data=event_data
-        )
-        
-        db.add(analytics)
-        await db.commit()
-    
-    def get_action_name(self, event: TelegramObject) -> str:
-        if isinstance(event, Message):
-            if event.text and event.text.startswith('/'):
-                return f"command:{event.text.split()[0]}"
-            return "message"
-        elif isinstance(event, CallbackQuery):
-            return f"callback:{event.data}" if event.data else "callback"
-        return "unknown"
-    
-    def extract_event_data(self, event: TelegramObject) -> Dict[str, Any]:
-        data = {}
-        
-        if isinstance(event, Message):
-            data.update({
-                "message_id": event.message_id,
-                "chat_type": event.chat.type if event.chat else None,
-                "text_length": len(event.text) if event.text else 0
-            })
-        elif isinstance(event, CallbackQuery):
-            data.update({
-                "callback_data": event.data,
-                "message_id": event.message.message_id if event.message else None
-            })
-        
-        return data
+        return await handler(event, data)

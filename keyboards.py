@@ -16,16 +16,9 @@ def main_menu_keyboard(lang: str = "uz", is_premium: bool = False) -> InlineKeyb
     )
     
     channels_text = "📺 Kanallarim" if lang == "uz" else "📺 Мои каналы"
-    referral_text = "👥 Referral" if lang == "uz" else "👥 Реферал"
-    builder.row(
-        InlineKeyboardButton(text=channels_text, callback_data="my_channels"),
-        InlineKeyboardButton(text=referral_text, callback_data="referral")
-    )
-    
-    notifications_text = "🔔 Bildirishnomalar" if lang == "uz" else "🔔 Уведомления"
     settings_text = "⚙️ Sozlamalar" if lang == "uz" else "⚙️ Настройки"
     builder.row(
-        InlineKeyboardButton(text=notifications_text, callback_data="notifications"),
+        InlineKeyboardButton(text=channels_text, callback_data="my_channels"),
         InlineKeyboardButton(text=settings_text, callback_data="settings")
     )
     
@@ -61,25 +54,11 @@ def contest_participation_keyboard(contest_id: int, participants_count: int,
                 callback_data=f"join_contest:{contest_id}"
             )
         )
-        
-        builder.row(
-            InlineKeyboardButton(
-                text="📊 Statistika",
-                callback_data=f"contest_stats:{contest_id}"
-            )
-        )
     else:
         builder.row(
             InlineKeyboardButton(
                 text=f"🏁 Tugagan ({participants_count})",
                 callback_data="contest_ended"
-            )
-        )
-        
-        builder.row(
-            InlineKeyboardButton(
-                text="🏆 G'oliblar",
-                callback_data=f"contest_winners:{contest_id}"
             )
         )
     
@@ -89,49 +68,12 @@ def channel_selection_keyboard(channels: List[Dict], lang: str = "uz") -> Inline
     builder = InlineKeyboardBuilder()
     
     for channel in channels:
-        verified_emoji = "✅" if channel.get('is_verified') else ""
         builder.row(
             InlineKeyboardButton(
-                text=f"📺 {channel['title']} {verified_emoji} ({channel.get('member_count', 0)})",
+                text=f"📺 {channel['title']} ({channel.get('member_count', 0)})",
                 callback_data=f"select_channel:{channel['channel_id']}"
             )
         )
-    
-    back_text = "🔙 Orqaga" if lang == "uz" else "🔙 Назад"
-    builder.row(InlineKeyboardButton(text=back_text, callback_data="main_menu"))
-    
-    return builder.as_markup()
-
-def contest_management_keyboard(contest_id: int, lang: str = "uz") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    edit_text = "✏️ Tahrirlash" if lang == "uz" else "✏️ Редактировать"
-    stats_text = "📊 Statistika" if lang == "uz" else "📊 Статистика"
-    builder.row(
-        InlineKeyboardButton(text=edit_text, callback_data=f"edit_contest:{contest_id}"),
-        InlineKeyboardButton(text=stats_text, callback_data=f"contest_detailed_stats:{contest_id}")
-    )
-    
-    participants_text = "👥 Qatnashchilar" if lang == "uz" else "👥 Участники"
-    export_text = "📤 Eksport" if lang == "uz" else "📤 Экспорт"
-    builder.row(
-        InlineKeyboardButton(text=participants_text, callback_data=f"contest_participants:{contest_id}"),
-        InlineKeyboardButton(text=export_text, callback_data=f"export_participants:{contest_id}")
-    )
-    
-    back_text = "🔙 Orqaga" if lang == "uz" else "🔙 Назад"
-    builder.row(InlineKeyboardButton(text=back_text, callback_data="my_contests"))
-    
-    return builder.as_markup()
-
-def premium_keyboard(lang: str = "uz") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    buy_text = "💳 Premium sotib olish" if lang == "uz" else "💳 Купить Premium"
-    builder.row(InlineKeyboardButton(text=buy_text, callback_data="buy_premium"))
-    
-    features_text = "✨ Imkoniyatlar" if lang == "uz" else "✨ Возможности"
-    builder.row(InlineKeyboardButton(text=features_text, callback_data="premium_features"))
     
     back_text = "🔙 Orqaga" if lang == "uz" else "🔙 Назад"
     builder.row(InlineKeyboardButton(text=back_text, callback_data="main_menu"))
@@ -157,31 +99,9 @@ def admin_panel_keyboard(lang: str = "uz") -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text=broadcast_text, callback_data="admin_broadcast"))
     
     stats_text = "📊 Statistika" if lang == "uz" else "📊 Статистика"
-    analytics_text = "📈 Analitika" if lang == "uz" else "📈 Аналитика"
-    builder.row(
-        InlineKeyboardButton(text=stats_text, callback_data="admin_stats"),
-        InlineKeyboardButton(text=analytics_text, callback_data="admin_analytics")
-    )
-    
-    users_text = "👥 Foydalanuvchilar" if lang == "uz" else "👥 Пользователи"
-    contests_text = "🏆 Konkurslar" if lang == "uz" else "🏆 Конкурсы"
-    builder.row(
-        InlineKeyboardButton(text=users_text, callback_data="admin_users"),
-        InlineKeyboardButton(text=contests_text, callback_data="admin_contests")
-    )
+    builder.row(InlineKeyboardButton(text=stats_text, callback_data="admin_stats"))
     
     back_text = "🔙 Orqaga" if lang == "uz" else "🔙 Назад"
     builder.row(InlineKeyboardButton(text=back_text, callback_data="main_menu"))
-    
-    return builder.as_markup()
-
-def notification_keyboard(notification_id: int, lang: str = "uz") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    mark_read_text = "✅ O'qilgan deb belgilash" if lang == "uz" else "✅ Отметить как прочитанное"
-    builder.row(InlineKeyboardButton(text=mark_read_text, callback_data=f"mark_read:{notification_id}"))
-    
-    back_text = "🔙 Orqaga" if lang == "uz" else "🔙 Назад"
-    builder.row(InlineKeyboardButton(text=back_text, callback_data="notifications"))
     
     return builder.as_markup()

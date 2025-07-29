@@ -1,124 +1,64 @@
 import redis.asyncio as redis
-from typing import Optional, Any, Union
+from config import settings
 import json
-import pickle
 import logging
-from contextlib import asynccontextmanager
-from datetime import timedelta
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-class RedisManager:
+class RedisCache:
     def __init__(self):
-        self.redis: Optional[redis.Redis] = None
-        self._initialized = False
+        self.redis = None
     
-    async def initialize(self):
-        if self._initialized:
-            return
-        
+    async def init_redis(self):
         try:
-            self.redis = redis.from_url(
-                settings.REDIS_URL,
-                decode_responses=False,
-                socket_timeout=settings.REDIS_TIMEOUT,
-                socket_connect_timeout=settings.REDIS_TIMEOUT,
-                retry_on_timeout=True,
-                health_check_interval=30
-            )
-            
+            self.redis = redis.from_url(settings.REDIS_URL)
             await self.redis.ping()
-            self._initialized = True
-            logger.info("Redis initialized successfully")
+            logger.info("Redis connected successfully")
         except Exception as e:
-            logger.warning(f"Redis initialization failed: {e}. Continuing without Redis.")
+            logger.warning(f"Redis connection failed: {e}")
             self.redis = None
     
     async def close(self):
         if self.redis:
             await self.redis.close()
-            logger.info("Redis connection closed")
     
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str):
         if not self.redis:
             return None
-        
         try:
             value = await self.redis.get(key)
-            if value:
-                return pickle.loads(value)
+            return json.loads(value) if value else None
         except Exception as e:
-            logger.error(f"Redis GET error for key {key}: {e}")
-        return None
+            logger.error(f"Redis get error: {e}")
+            return None
     
-    async def set(self, key: str, value: Any, expire: Optional[int] = None) -> bool:
+    async def set(self, key: str, value, expire: int = 3600):
         if not self.redis:
             return False
-        
         try:
-            serialized_value = pickle.dumps(value)
-            await self.redis.set(key, serialized_value, ex=expire)
+            await self.redis.set(key, json.dumps(value), ex=expire)
             return True
         except Exception as e:
-            logger.error(f"Redis SET error for key {key}: {e}")
+            logger.error(f"Redis set error: {e}")
             return False
     
-    async def delete(self, key: str) -> bool:
+    async def delete(self, key: str):
         if not self.redis:
             return False
-        
         try:
             await self.redis.delete(key)
             return True
         except Exception as e:
-            logger.error(f"Redis DELETE error for key {key}: {e}")
+            logger.error(f"Redis delete error: {e}")
             return False
     
-    async def exists(self, key: str) -> bool:
+    async def increment(self, key: str, amount: int = 1):
         if not self.redis:
-            return False
-        
+            return 0
         try:
-            return bool(await self.redis.exists(key))
+            return await self.redis.incrby(key, amount)
         except Exception as e:
-            logger.error(f"Redis EXISTS error for key {key}: {e}")
-            return False
-    
-    async def incr(self, key: str, amount: int = 1) -> Optional[int]:
-        if not self.redis:
-            return None
-        
-        try:
-            return await self.redis.incr(key, amount)
-        except Exception as e:
-            logger.error(f"Redis INCR error for key {key}: {e}")
-            return None
-    
-    async def expire(self, key: str, seconds: int) -> bool:
-        if not self.redis:
-            return False
-        
-        try:
-            return await self.redis.expire(key, seconds)
-        except Exception as e:
-            logger.error(f"Redis EXPIRE error for key {key}: {e}")
-            return False
-    
-    async def set_with_ttl(self, key: str, value: Any, ttl: timedelta) -> bool:
-        return await self.set(key, value, int(ttl.total_seconds()))
+            logger.error(f"Redis increment error: {e}")
+            return 0
 
-redis_manager = RedisManager()
-cache = redis_manager
-
-async def init_redis():
-    await redis_manager.initialize()
-
-async def close_redis():
-    await redis_manager.close()
-
-async def get_redis():
-    if not redis_manager._initialized:
-        await redis_manager.initialize()
-    return redis_manager
+cache = RedisCache()

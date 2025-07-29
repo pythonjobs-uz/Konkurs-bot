@@ -1,206 +1,144 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-
-from app.core.database import User, Contest, Participant
+from app.core.database import db
 from app.core.redis import cache
+from config import settings
+import secrets
 
 class UserService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-    
-    async def create_or_update_user(
-        self,
-        user_id: int,
-        username: Optional[str] = None,
-        first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
-        language_code: str = "uz"
-    ) -> User:
+    @staticmethod
+    async def get_user_with_cache(user_id: int) -> Optional[Dict[str, Any]]:
         cache_key = f"user:{user_id}"
+        user = await cache.get(cache_key)
         
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user:
-            user.username = username
-            user.first_name = first_name
-            user.last_name = last_name
-            user.language_code = language_code
-            user.last_activity = datetime.utcnow()
-            user.updated_at = datetime.utcnow()
-        else:
-            user = User(
-                id=user_id,
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
-                language_code=language_code
-            )
-            self.db.add(user)
-        
-        await self.db.commit()
-        await self.db.refresh(user)
-        
-        await cache.set(cache_key, user, 3600)
-        return user
-    
-    async def get_user(self, user_id: int) -> Optional[User]:
-        cache_key = f"user:{user_id}"
-        cached_user = await cache.get(cache_key)
-        
-        if cached_user:
-            return cached_user
-        
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user:
-            await cache.set(cache_key, user, 3600)
+        if not user:
+            user = await db.get_user(user_id)
+            if user:
+                await cache.set(cache_key, user, expire=300)
         
         return user
     
-    async def get_all_active_users(self) -> List[User]:
-        result = await self.db.execute(
-            select(User).where(
-                and_(User.is_active == True, User.is_banned == False)
-            )
-        )
-        return list(result.scalars().all())
-    
-    async def get_premium_users(self) -> List[User]:
-        result = await self.db.execute(
-            select(User).where(
-                and_(
-                    User.is_active == True, 
-                    User.is_premium == True,
-                    User.is_banned == False
-                )
-            )
-        )
-        return list(result.scalars().all())
-    
-    async def update_premium_status(self, user_id: int, is_premium: bool):
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user:
-            user.is_premium = is_premium
-            await self.db.commit()
+    @staticmethod
+    async def update_user_premium(user_id: int, premium_until: datetime) -> bool:
+        try:
+            await db.connection.execute("""
+                UPDATE users SET is_premium = 1, premium_until = ? WHERE id = ?
+            """, (premium_until.isoformat(), user_id))
+            await db.connection.commit()
             
-            cache_key = f"user:{user_id}"
-            await cache.delete(cache_key)
+            await cache.delete(f"user:{user_id}")
+            return True
+        except Exception:
+            return False
     
-    async def ban_user(self, user_id: int, banned: bool = True):
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
+    @staticmethod
+    async def check_premium_status(user_id: int) -> bool:
+        user = await UserService.get_user_with_cache(user_id)
+        if not user or not user.get('is_premium'):
+            return False
         
-        if user:
-            user.is_banned = banned
-            if banned:
-                user.is_active = False
-            await self.db.commit()
-            
-            cache_key = f"user:{user_id}"
-            await cache.delete(cache_key)
+        if user.get('premium_until'):
+            premium_until = datetime.fromisoformat(user['premium_until'])
+            if premium_until < datetime.now():
+                await db.connection.execute("""
+                    UPDATE users SET is_premium = 0, premium_until = NULL WHERE id = ?
+                """, (user_id,))
+                await db.connection.commit()
+                await cache.delete(f"user:{user_id}")
+                return False
+        
+        return True
     
-    async def get_statistics(self) -> Dict[str, int]:
-        cache_key = "user_statistics"
-        cached_stats = await cache.get(cache_key)
+    @staticmethod
+    async def get_referral_info(user_id: int) -> Dict[str, Any]:
+        user = await UserService.get_user_with_cache(user_id)
+        if not user:
+            return {}
         
-        if cached_stats:
-            return cached_stats
+        referral_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{user['referral_code']}"
         
-        total_users_result = await self.db.execute(
-            select(func.count(User.id))
-        )
-        total_users = total_users_result.scalar() or 0
+        cursor = await db.connection.execute("""
+            SELECT COUNT(*) FROM users WHERE referred_by = ?
+        """, (user_id,))
+        referrals_count = (await cursor.fetchone())[0]
         
-        active_users_result = await self.db.execute(
-            select(func.count(User.id)).where(
-                and_(User.is_active == True, User.is_banned == False)
-            )
-        )
-        active_users = active_users_result.scalar() or 0
+        bonus_amount = referrals_count * 5000
         
-        premium_users_result = await self.db.execute(
-            select(func.count(User.id)).where(
-                and_(
-                    User.is_active == True, 
-                    User.is_premium == True,
-                    User.is_banned == False
-                )
-            )
-        )
-        premium_users = premium_users_result.scalar() or 0
-        
-        today = datetime.utcnow().date()
-        new_today_result = await self.db.execute(
-            select(func.count(User.id)).where(
-                func.date(User.created_at) == today
-            )
-        )
-        new_today = new_today_result.scalar() or 0
-        
-        total_contests_result = await self.db.execute(
-            select(func.count(Contest.id))
-        )
-        total_contests = total_contests_result.scalar() or 0
-        
-        active_contests_result = await self.db.execute(
-            select(func.count(Contest.id)).where(Contest.status == "active")
-        )
-        active_contests = active_contests_result.scalar() or 0
-        
-        stats = {
-            "total_users": total_users,
-            "active_users": active_users,
-            "premium_users": premium_users,
-            "new_today": new_today,
-            "total_contests": total_contests,
-            "active_contests": active_contests
+        return {
+            "referral_code": user['referral_code'],
+            "referral_link": referral_link,
+            "referrals_count": referrals_count,
+            "bonus_amount": bonus_amount
         }
-        
-        await cache.set(cache_key, stats, 300)
-        return stats
     
-    async def get_user_activity_stats(self, days: int = 7) -> Dict[str, int]:
-        since_date = datetime.utcnow() - timedelta(days=days)
+    @staticmethod
+    async def process_referral(user_id: int, referral_code: str) -> bool:
+        try:
+            cursor = await db.connection.execute("""
+                SELECT id FROM users WHERE referral_code = ?
+            """, (referral_code,))
+            referrer = await cursor.fetchone()
+            
+            if referrer and referrer[0] != user_id:
+                await db.connection.execute("""
+                    UPDATE users SET referred_by = ?, total_referrals = total_referrals + 1 
+                    WHERE id = ?
+                """, (referrer[0], user_id))
+                
+                await db.connection.execute("""
+                    UPDATE users SET total_referrals = total_referrals + 1 WHERE id = ?
+                """, (referrer[0],))
+                
+                await db.connection.commit()
+                
+                await cache.delete(f"user:{user_id}")
+                await cache.delete(f"user:{referrer[0]}")
+                
+                return True
+        except Exception:
+            pass
         
-        result = await self.db.execute(
-            select(func.count(User.id)).where(
-                and_(
-                    User.last_activity >= since_date,
-                    User.is_active == True,
-                    User.is_banned == False
-                )
-            )
-        )
-        
-        return {"active_users": result.scalar() or 0}
+        return False
     
-    async def search_users(self, query: str, limit: int = 50) -> List[User]:
-        search_pattern = f"%{query}%"
-        result = await self.db.execute(
-            select(User).where(
-                and_(
-                    User.is_active == True,
-                    User.is_banned == False,
-                    or_(
-                        User.username.ilike(search_pattern),
-                        User.first_name.ilike(search_pattern),
-                        User.last_name.ilike(search_pattern)
-                    )
-                )
-            ).limit(limit)
-        )
-        return list(result.scalars().all())
+    @staticmethod
+    async def get_user_analytics(user_id: int, days: int = 30) -> Dict[str, Any]:
+        cache_key = f"user_analytics:{user_id}:{days}"
+        analytics = await cache.get(cache_key)
+        
+        if not analytics:
+            cursor = await db.connection.execute("""
+                SELECT COUNT(*) FROM contests WHERE owner_id = ? 
+                AND created_at >= datetime('now', '-{} days')
+            """.format(days), (user_id,))
+            contests_created = (await cursor.fetchone())[0]
+            
+            cursor = await db.connection.execute("""
+                SELECT COUNT(*) FROM participants p
+                JOIN contests c ON p.contest_id = c.id
+                WHERE c.owner_id = ? AND p.joined_at >= datetime('now', '-{} days')
+            """.format(days), (user_id,))
+            total_participants = (await cursor.fetchone())[0]
+            
+            cursor = await db.connection.execute("""
+                SELECT COUNT(*) FROM participants WHERE user_id = ? 
+                AND joined_at >= datetime('now', '-{} days')
+            """.format(days), (user_id,))
+            participated_contests = (await cursor.fetchone())[0]
+            
+            cursor = await db.connection.execute("""
+                SELECT COUNT(*) FROM winners WHERE user_id = ? 
+                AND announced_at >= datetime('now', '-{} days')
+            """.format(days), (user_id,))
+            won_contests = (await cursor.fetchone())[0]
+            
+            analytics = {
+                "contests_created": contests_created,
+                "total_participants": total_participants,
+                "participated_contests": participated_contests,
+                "won_contests": won_contests,
+                "success_rate": (won_contests / participated_contests * 100) if participated_contests > 0 else 0
+            }
+            
+            await cache.set(cache_key, analytics, expire=3600)
+        
+        return analytics
